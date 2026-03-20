@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: ["**"]
+    tags: ["v*"]
   pull_request:
     branches: ["**"]
 
@@ -36,3 +37,32 @@ jobs:
         with:
           name: plugin-jar
           path: target/scala-2.13/gitbucket-issue-reporter-plugin-*.jar
+
+  release:
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: "11"
+          distribution: "temurin"
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Build fat JAR (POI bundled)
+        run: sbt assembly
+
+      - name: Build thin JAR (POI excluded)
+        run: sbt -Dthin=true assembly
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: target/scala-2.13/gitbucket-issue-reporter-plugin-*.jar
