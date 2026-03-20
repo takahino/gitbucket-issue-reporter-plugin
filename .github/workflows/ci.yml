@@ -57,11 +57,11 @@ jobs:
       - name: Set up sbt
         uses: sbt/setup-sbt@v1
 
-      - name: Build fat JAR (POI bundled)
-        run: sbt assembly
-
       - name: Build thin JAR (POI excluded)
         run: sbt -Dthin=true assembly
+
+      - name: Build fat JAR (POI bundled)
+        run: sbt assembly
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
