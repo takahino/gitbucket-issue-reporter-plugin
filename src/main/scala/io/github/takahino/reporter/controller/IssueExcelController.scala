@@ -4,7 +4,7 @@ import gitbucket.core.controller.ControllerBase
 import gitbucket.core.service.{AccountService, RepositoryService}
 import gitbucket.core.util.ReadableUsersAuthenticator
 import gitbucket.core.util.Implicits._
-import io.github.takahino.reporter.service.{IssueNoteRepository, IssuePeriodRepository, IssueReportService}
+import io.github.takahino.reporter.service.{IssueNoteRepository, IssuePeriodRepository, IssueReportService, MailScheduleRepository}
 import org.slf4j.LoggerFactory
 
 import scala.util.Try
@@ -55,8 +55,11 @@ class IssueReportController
       s"""attachment; filename="${filename}"; filename*=UTF-8''${encodedName}"""
     )
 
+    val columnOrder = MailScheduleRepository.findByRepo(conn, owner, repoName)
+                        .map(_.columnOrder).getOrElse("")
+
     Try {
-      IssueReportService.generateExcel(issues, response.getOutputStream)
+      IssueReportService.generateExcel(issues, response.getOutputStream, columnOrder)
     }.recover { case e =>
       logger.error("Excel generation failed", e)
       halt(500, "Excel の生成中にエラーが発生しました。")

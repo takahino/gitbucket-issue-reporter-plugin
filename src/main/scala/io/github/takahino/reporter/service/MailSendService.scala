@@ -38,7 +38,7 @@ object MailSendService {
       IssueReportService.loadIssues(conn, schedule.owner, schedule.repository, loadBaseUrl()),
       periods)
     val baos    = new ByteArrayOutputStream()
-    IssueReportService.generateExcel(issues, baos)
+    IssueReportService.generateExcel(issues, baos, schedule.columnOrder)
     val excelBytes = baos.toByteArray
 
     val filename = s"issues-${schedule.owner}-${schedule.repository}.xlsx"

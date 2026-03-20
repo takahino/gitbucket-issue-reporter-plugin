@@ -20,6 +20,48 @@ object IssueReportService {
   private val MaxColumnWidthUnits = 255 * 256
   private val milestoneDueDateFmt = DateTimeFormatter.ofPattern("yyyy/MM/dd")
 
+  case class ColumnDef(
+    key:       String,
+    header:    String,
+    extract:   IssueRow => String,
+    isNumeric: Boolean = false,
+    isBody:    Boolean = false,
+    isTitle:   Boolean = false
+  )
+
+  val AllColumns: Seq[ColumnDef] = Seq(
+    ColumnDef("issue_id",             "Issue#",            r => r.issueId.toString,                        isNumeric = true),
+    ColumnDef("title",                "タイトル",           r => r.title,                                   isTitle   = true),
+    ColumnDef("body",                 "本文",               r => r.body.take(MaxCellLength),                isBody    = true),
+    ColumnDef("status",               "状態",               r => if (r.closed) "closed" else "open"),
+    ColumnDef("creator",              "作成者",             r => r.creator),
+    ColumnDef("assignee",             "担当者",             r => r.assignee),
+    ColumnDef("labels",               "ラベル",             r => r.labels),
+    ColumnDef("milestone",            "マイルストーン",      r => r.milestone),
+    ColumnDef("comment_count",        "コメント数",          r => r.commentCount.toString,                   isNumeric = true),
+    ColumnDef("created_at",           "作成日時",           r => r.createdAt),
+    ColumnDef("updated_at",           "更新日時",           r => r.updatedAt),
+    ColumnDef("closed_date",          "クローズ日",          r => r.closedDate),
+    ColumnDef("url",                  "URL",                r => r.url),
+    ColumnDef("note",                 "備考",               r => r.note),
+    ColumnDef("waiting_confirmation", "確認待ち",           r => if (r.waitingForConfirmation) "○" else ""),
+    ColumnDef("confirmation_detail",  "確認詳細",           r => r.confirmationDetail),
+    ColumnDef("milestone_due_date",   "マイルストーン期日",   r => r.milestoneDueDate),
+    ColumnDef("start_date",           "開始予定日",          r => r.startDate.getOrElse("")),
+    ColumnDef("end_date",             "完了予定日",          r => r.endDate.getOrElse("")),
+    ColumnDef("progress",             "進捗(%)",            r => r.progress.map(_.toString).getOrElse(""),  isNumeric = true)
+  )
+
+  val ColumnDefByKey: Map[String, ColumnDef] = AllColumns.map(c => c.key -> c).toMap
+  val DefaultColumnOrder: Seq[String]        = AllColumns.map(_.key)
+
+  def resolveColumns(columnOrder: String): Seq[ColumnDef] = {
+    val trimmed = columnOrder.trim
+    if (trimmed.isEmpty) AllColumns
+    else trimmed.split(",").map(_.trim).filter(_.nonEmpty)
+                .flatMap(ColumnDefByKey.get).toSeq
+  }
+
   /**
    * 列幅推定用: 半角は 1、全角相当（日本語など）は 2 としてざっくり幅単位を数える。
    * POI の autoSizeColumn は環境・フォントによって日本語がかなり狭く見積もられることがある。
@@ -160,13 +202,15 @@ object IssueReportService {
 
   /**
    * Issue 一覧から xlsx を生成して OutputStream に書き出す。
-   * 常に 20 列（開始予定日・完了予定日・進捗(%) を含む）。
+   * columnOrder が空なら全20列デフォルト順、カンマ区切りキーを指定すると該当列のみ指定順で出力。
    * gantt 列は事前に mergeWithPeriods で IssueRow にマージしておく。
    */
   def generateExcel(
-    issues: Seq[IssueRow],
-    out:    OutputStream
+    issues:      Seq[IssueRow],
+    out:         OutputStream,
+    columnOrder: String = ""
   ): Unit = {
+    val cols  = resolveColumns(columnOrder)
     val wb    = new XSSFWorkbook()
     val sheet = wb.createSheet("Issues")
 
@@ -193,52 +237,35 @@ object IssueReportService {
       s
     }
 
-    val headers = Seq(
-      "Issue#", "タイトル", "本文", "状態", "作成者", "担当者", "ラベル", "マイルストーン",
-      "コメント数", "作成日時", "更新日時", "クローズ日", "URL", "備考", "確認待ち", "確認詳細", "マイルストーン期日",
-      "開始予定日", "完了予定日", "進捗(%)"
-    )
-
     val headerRow = sheet.createRow(0)
-    headers.zipWithIndex.foreach { case (h, i) =>
+    cols.zipWithIndex.foreach { case (col, i) =>
       val cell = headerRow.createCell(i)
-      cell.setCellValue(h)
+      cell.setCellValue(col.header)
       cell.setCellStyle(headerStyle)
     }
-    // ヘッダ行に対してフィルタをデフォルトで有効化
-    sheet.setAutoFilter(new CellRangeAddress(0, 0, 0, headers.size - 1))
+    // ヘッダ行に対してフィルタをデフォルトで有効化（列が1つ以上ある場合のみ）
+    if (cols.nonEmpty)
+      sheet.setAutoFilter(new CellRangeAddress(0, 0, 0, cols.size - 1))
 
     issues.zipWithIndex.foreach { case (issue, idx) =>
-      val row = sheet.createRow(idx + 1)
-      row.createCell(0).setCellValue(issue.issueId.toDouble)
-      val titleCell = row.createCell(1)
-      titleCell.setCellValue(issue.title)
-      if (issue.url != null && issue.url.nonEmpty) {
-        val link = creationHelper.createHyperlink(HyperlinkType.URL)
-        link.setAddress(issue.url)
-        titleCell.setHyperlink(link)
-        titleCell.setCellStyle(hyperlinkStyle)
-      }
-      row.createCell(2).setCellValue(issue.body.take(MaxCellLength))
-      row.createCell(3).setCellValue(if (issue.closed) "closed" else "open")
-      row.createCell(4).setCellValue(issue.creator)
-      row.createCell(5).setCellValue(issue.assignee)
-      row.createCell(6).setCellValue(issue.labels)
-      row.createCell(7).setCellValue(issue.milestone)
-      row.createCell(8).setCellValue(issue.commentCount.toDouble)
-      row.createCell(9).setCellValue(issue.createdAt)
-      row.createCell(10).setCellValue(issue.updatedAt)
-      row.createCell(11).setCellValue(issue.closedDate)
-      row.createCell(12).setCellValue(issue.url)
-      row.createCell(13).setCellValue(issue.note)
-      row.createCell(14).setCellValue(if (issue.waitingForConfirmation) "○" else "")
-      row.createCell(15).setCellValue(issue.confirmationDetail)
-      row.createCell(16).setCellValue(issue.milestoneDueDate)
-      row.createCell(17).setCellValue(issue.startDate.getOrElse(""))
-      row.createCell(18).setCellValue(issue.endDate.getOrElse(""))
-      issue.progress match {
-        case Some(v) => row.createCell(19).setCellValue(v.toDouble)
-        case None    => row.createCell(19).setCellValue("")
+      val dataRow = sheet.createRow(idx + 1)
+      cols.zipWithIndex.foreach { case (col, i) =>
+        if (col.isNumeric) {
+          val v = col.extract(issue)
+          if (v.nonEmpty) dataRow.createCell(i).setCellValue(v.toDouble)
+          else dataRow.createCell(i).setCellValue("")
+        } else if (col.isTitle) {
+          val cell = dataRow.createCell(i)
+          cell.setCellValue(col.extract(issue))
+          if (issue.url != null && issue.url.nonEmpty) {
+            val link = creationHelper.createHyperlink(HyperlinkType.URL)
+            link.setAddress(issue.url)
+            cell.setHyperlink(link)
+            cell.setCellStyle(hyperlinkStyle)
+          }
+        } else {
+          dataRow.createCell(i).setCellValue(col.extract(issue))
+        }
       }
     }
 
@@ -246,13 +273,12 @@ object IssueReportService {
     val dataFormatter = new DataFormatter()
     val lastDataRow   = sheet.getLastRowNum
 
-    headers.indices.foreach { col =>
+    cols.indices.foreach { col =>
       sheet.autoSizeColumn(col, true)
     }
 
-    headers.indices.foreach { col =>
-      val headerText = headers(col)
-      var maxUnits = math.ceil(displayWidthUnits(headerText) * 1.2).toInt
+    cols.zipWithIndex.foreach { case (colDef, col) =>
+      var maxUnits = math.ceil(displayWidthUnits(colDef.header) * 1.2).toInt
       var r        = 1
       while (r <= lastDataRow) {
         val dataRow = sheet.getRow(r)
@@ -268,12 +294,12 @@ object IssueReportService {
       val contentFloor = math.min(MaxColumnWidthUnits, (maxUnits + 5) * 256)
       val merged       = math.min(MaxColumnWidthUnits, math.max(sheet.getColumnWidth(col), contentFloor))
       sheet.setColumnWidth(col, merged)
+
+      // 本文列は横長になりすぎないよう最大幅を制限する
+      if (colDef.isBody && sheet.getColumnWidth(col) > MaxBodyColWidth)
+        sheet.setColumnWidth(col, MaxBodyColWidth)
     }
 
-    // 本文列（index=2）は横長になりすぎないよう最大幅を制限する
-    val bodyColIdx = 2
-    if (sheet.getColumnWidth(bodyColIdx) > MaxBodyColWidth)
-      sheet.setColumnWidth(bodyColIdx, MaxBodyColWidth)
     sheet.createFreezePane(0, 1)
 
     wb.write(out)

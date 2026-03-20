@@ -40,12 +40,13 @@ class IssueReportServiceSpec extends AnyFunSuite with Matchers {
   // -------------------------------------------------------------------------
 
   private def makeWorkbook(
-    issues:  Seq[IssueReportService.IssueRow],
-    periods: Map[Int, IssuePeriod] = Map.empty
+    issues:      Seq[IssueReportService.IssueRow],
+    periods:     Map[Int, IssuePeriod] = Map.empty,
+    columnOrder: String                = ""
   ): XSSFWorkbook = {
     val out = new ByteArrayOutputStream()
     val mergedIssues = IssueReportService.mergeWithPeriods(issues, periods)
-    IssueReportService.generateExcel(mergedIssues, out)
+    IssueReportService.generateExcel(mergedIssues, out, columnOrder)
     new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray))
   }
 
@@ -190,6 +191,71 @@ class IssueReportServiceSpec extends AnyFunSuite with Matchers {
 
     sheet.getRow(2).getCell(17).getStringCellValue shouldBe ""
     sheet.getRow(2).getCell(18).getStringCellValue shouldBe ""
+    wb.close()
+  }
+
+  // -------------------------------------------------------------------------
+  // resolveColumns
+  // -------------------------------------------------------------------------
+
+  test("resolveColumns: 空文字列は全20列を返す") {
+    IssueReportService.resolveColumns("").size shouldBe 20
+  }
+
+  test("resolveColumns: 有効なキーのみを返す") {
+    val cols = IssueReportService.resolveColumns("issue_id,title,status")
+    cols.map(_.key) shouldBe Seq("issue_id", "title", "status")
+  }
+
+  test("resolveColumns: 不明なキーは無視される") {
+    val cols = IssueReportService.resolveColumns("issue_id,unknown_key,title")
+    cols.map(_.key) shouldBe Seq("issue_id", "title")
+  }
+
+  test("resolveColumns: 列順序が指定通りになる") {
+    val cols = IssueReportService.resolveColumns("status,title,issue_id")
+    cols.map(_.key) shouldBe Seq("status", "title", "issue_id")
+  }
+
+  // -------------------------------------------------------------------------
+  // generateExcel with columnOrder
+  // -------------------------------------------------------------------------
+
+  test("generateExcel: columnOrder=''は20列出力") {
+    val wb    = makeWorkbook(Seq.empty, columnOrder = "")
+    val sheet = wb.getSheet("Issues")
+    sheet.getRow(0).getLastCellNum shouldBe 20
+    wb.close()
+  }
+
+  test("generateExcel: columnOrderで3列指定するとヘッダーが3列") {
+    val wb    = makeWorkbook(Seq.empty, columnOrder = "issue_id,title,status")
+    val sheet = wb.getSheet("Issues")
+    sheet.getRow(0).getLastCellNum shouldBe 3
+    sheet.getRow(0).getCell(0).getStringCellValue shouldBe "Issue#"
+    sheet.getRow(0).getCell(1).getStringCellValue shouldBe "タイトル"
+    sheet.getRow(0).getCell(2).getStringCellValue shouldBe "状態"
+    wb.close()
+  }
+
+  test("generateExcel: columnOrderで指定した列のデータが正しく出力される") {
+    val issue = row(issueId = 7, title = "Partial", closed = true, creator = "eve")
+    val wb    = makeWorkbook(Seq(issue), columnOrder = "issue_id,status,creator")
+    val sheet = wb.getSheet("Issues")
+    val r1    = sheet.getRow(1)
+    r1.getCell(0).getNumericCellValue shouldBe 7.0
+    r1.getCell(1).getStringCellValue  shouldBe "closed"
+    r1.getCell(2).getStringCellValue  shouldBe "eve"
+    wb.close()
+  }
+
+  test("generateExcel: 不明キーのみの場合はヘッダ行に列が存在しない") {
+    val wb    = makeWorkbook(Seq.empty, columnOrder = "no_such_key")
+    val sheet = wb.getSheet("Issues")
+    // 列が0のためヘッダ行はnullまたは空
+    val headerRow = sheet.getRow(0)
+    val colCount  = if (headerRow == null) 0 else math.max(0, headerRow.getLastCellNum.toInt)
+    colCount shouldBe 0
     wb.close()
   }
 }

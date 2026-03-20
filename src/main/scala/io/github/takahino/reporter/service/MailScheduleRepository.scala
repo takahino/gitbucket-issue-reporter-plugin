@@ -32,6 +32,19 @@ object MailScheduleRepository {
     )
   }
 
+  def alterTablesIfNeeded(ds: DataSource): Unit = {
+    val conn = ds.getConnection()
+    try alterTablesIfNeeded(conn)
+    finally conn.close()
+  }
+
+  def alterTablesIfNeeded(conn: Connection): Unit = {
+    conn.createStatement().execute(
+      "ALTER TABLE REPORTER_MAIL_SCHEDULE " +
+      "ADD COLUMN IF NOT EXISTS COLUMN_ORDER VARCHAR(500) NOT NULL DEFAULT ''"
+    )
+  }
+
   def findByRepo(conn: Connection, owner: String, repository: String): Option[MailSchedule] = {
     val ps = conn.prepareStatement(
       "SELECT * FROM REPORTER_MAIL_SCHEDULE WHERE OWNER = ? AND REPOSITORY = ? LIMIT 1"
@@ -61,7 +74,7 @@ object MailScheduleRepository {
     if (existing.isDefined) {
       val ps = conn.prepareStatement(
         """UPDATE REPORTER_MAIL_SCHEDULE
-          |SET RECIPIENTS=?, SEND_HOUR=?, SEND_MINUTE=?, DAYS_OF_WEEK=?, ENABLED=?
+          |SET RECIPIENTS=?, SEND_HOUR=?, SEND_MINUTE=?, DAYS_OF_WEEK=?, ENABLED=?, COLUMN_ORDER=?
           |WHERE OWNER=? AND REPOSITORY=?""".stripMargin
       )
       ps.setString(1, s.recipients)
@@ -69,14 +82,15 @@ object MailScheduleRepository {
       ps.setInt(3, s.minute)
       ps.setString(4, s.daysOfWeek)
       ps.setBoolean(5, s.enabled)
-      ps.setString(6, s.owner)
-      ps.setString(7, s.repository)
+      ps.setString(6, s.columnOrder)
+      ps.setString(7, s.owner)
+      ps.setString(8, s.repository)
       ps.executeUpdate(); ps.close()
     } else {
       val ps = conn.prepareStatement(
         """INSERT INTO REPORTER_MAIL_SCHEDULE
-          |(OWNER, REPOSITORY, RECIPIENTS, SEND_HOUR, SEND_MINUTE, DAYS_OF_WEEK, ENABLED)
-          |VALUES (?,?,?,?,?,?,?)""".stripMargin
+          |(OWNER, REPOSITORY, RECIPIENTS, SEND_HOUR, SEND_MINUTE, DAYS_OF_WEEK, ENABLED, COLUMN_ORDER)
+          |VALUES (?,?,?,?,?,?,?,?)""".stripMargin
       )
       ps.setString(1, s.owner)
       ps.setString(2, s.repository)
@@ -85,6 +99,7 @@ object MailScheduleRepository {
       ps.setInt(5, s.minute)
       ps.setString(6, s.daysOfWeek)
       ps.setBoolean(7, s.enabled)
+      ps.setString(8, s.columnOrder)
       ps.executeUpdate(); ps.close()
     }
   }
@@ -123,7 +138,7 @@ object MailScheduleRepository {
     if (userNames.isEmpty) return Seq.empty
     val placeholders = userNames.map(_ => "?").mkString(",")
     val ps = conn.prepareStatement(
-      s"SELECT MAIL_ADDRESS FROM ACCOUNT WHERE USER_NAME IN ($placeholders) AND REMOVED = FALSE"
+      s"SELECT MAIL_ADDRESS FROM ACCOUNT WHERE USER_NAME IN ($placeholders) AND GROUP_ACCOUNT = FALSE AND REMOVED = FALSE"
     )
     userNames.zipWithIndex.foreach { case (name, i) => ps.setString(i + 1, name) }
     val rs  = ps.executeQuery()
@@ -148,15 +163,16 @@ object MailScheduleRepository {
   private def fromRow(rs: java.sql.ResultSet): MailSchedule = {
     val ts = rs.getTimestamp("LAST_SENT_AT")
     MailSchedule(
-      id         = rs.getInt("ID"),
-      owner      = rs.getString("OWNER"),
-      repository = rs.getString("REPOSITORY"),
-      recipients = rs.getString("RECIPIENTS"),
-      hour       = rs.getInt("SEND_HOUR"),
-      minute     = rs.getInt("SEND_MINUTE"),
-      daysOfWeek = rs.getString("DAYS_OF_WEEK"),
-      enabled    = rs.getBoolean("ENABLED"),
-      lastSentAt = if (ts == null) None else Some(ts.toLocalDateTime)
+      id          = rs.getInt("ID"),
+      owner       = rs.getString("OWNER"),
+      repository  = rs.getString("REPOSITORY"),
+      recipients  = rs.getString("RECIPIENTS"),
+      hour        = rs.getInt("SEND_HOUR"),
+      minute      = rs.getInt("SEND_MINUTE"),
+      daysOfWeek  = rs.getString("DAYS_OF_WEEK"),
+      enabled     = rs.getBoolean("ENABLED"),
+      lastSentAt  = if (ts == null) None else Some(ts.toLocalDateTime),
+      columnOrder = Option(rs.getString("COLUMN_ORDER")).getOrElse("")
     )
   }
 }

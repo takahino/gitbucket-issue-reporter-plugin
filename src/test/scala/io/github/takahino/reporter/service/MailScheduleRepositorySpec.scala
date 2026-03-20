@@ -15,6 +15,7 @@ class MailScheduleRepositorySpec extends AnyFunSuite with Matchers with BeforeAn
   override def beforeEach(): Unit = {
     conn = DriverManager.getConnection("jdbc:h2:mem:test_mail_schedule;DB_CLOSE_DELAY=-1", "sa", "")
     MailScheduleRepository.createTablesIfNotExists(conn)
+    MailScheduleRepository.alterTablesIfNeeded(conn)
   }
 
   override def afterEach(): Unit = {
@@ -26,17 +27,18 @@ class MailScheduleRepositorySpec extends AnyFunSuite with Matchers with BeforeAn
   private val mondayAt1030: LocalDateTime = LocalDateTime.of(2026, 3, 23, 10, 30)
 
   private def insertSchedule(
-    owner:      String                  = "owner",
-    repo:       String                  = "repo",
-    recipients: String                  = "alice",
-    hour:       Int                     = 10,
-    minute:     Int                     = 30,
-    daysOfWeek: String                  = "1",        // 月曜日
-    enabled:    Boolean                 = true,
-    lastSentAt: Option[LocalDateTime]   = None
+    owner:       String                = "owner",
+    repo:        String                = "repo",
+    recipients:  String                = "alice",
+    hour:        Int                   = 10,
+    minute:      Int                   = 30,
+    daysOfWeek:  String                = "1",        // 月曜日
+    enabled:     Boolean               = true,
+    lastSentAt:  Option[LocalDateTime] = None,
+    columnOrder: String                = ""
   ): Unit = {
     // upsert は LAST_SENT_AT を保存しないため、insert後に別途更新する
-    val s = MailSchedule(0, owner, repo, recipients, hour, minute, daysOfWeek, enabled, None)
+    val s = MailSchedule(0, owner, repo, recipients, hour, minute, daysOfWeek, enabled, None, columnOrder)
     MailScheduleRepository.upsert(conn, s)
     lastSentAt.foreach { at =>
       val id = MailScheduleRepository.findByRepo(conn, owner, repo).get.id
@@ -154,5 +156,41 @@ class MailScheduleRepositorySpec extends AnyFunSuite with Matchers with BeforeAn
     updated.lastSentAt shouldBe defined
     updated.lastSentAt.get.getHour   shouldBe 10
     updated.lastSentAt.get.getMinute shouldBe 30
+  }
+
+  // -------------------------------------------------------------------------
+  // alterTablesIfNeeded
+  // -------------------------------------------------------------------------
+
+  test("alterTablesIfNeeded: 冪等性 — 2回呼び出してもエラーにならない") {
+    noException should be thrownBy {
+      MailScheduleRepository.alterTablesIfNeeded(conn)
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // columnOrder
+  // -------------------------------------------------------------------------
+
+  test("upsert: columnOrderを保存・取得できる") {
+    insertSchedule(columnOrder = "issue_id,title,status")
+    val result = MailScheduleRepository.findByRepo(conn, "owner", "repo")
+    result shouldBe defined
+    result.get.columnOrder shouldBe "issue_id,title,status"
+  }
+
+  test("upsert: columnOrderが空文字列でも保存できる") {
+    insertSchedule(columnOrder = "")
+    val result = MailScheduleRepository.findByRepo(conn, "owner", "repo")
+    result shouldBe defined
+    result.get.columnOrder shouldBe ""
+  }
+
+  test("upsert: 既存スケジュールのcolumnOrderを更新できる") {
+    insertSchedule(columnOrder = "issue_id,title")
+    val original = MailScheduleRepository.findByRepo(conn, "owner", "repo").get
+    MailScheduleRepository.upsert(conn, original.copy(columnOrder = "status,creator,assignee"))
+    val updated = MailScheduleRepository.findByRepo(conn, "owner", "repo").get
+    updated.columnOrder shouldBe "status,creator,assignee"
   }
 }

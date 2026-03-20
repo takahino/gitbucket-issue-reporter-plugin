@@ -52,6 +52,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
         def getParentLogger                      = java.util.logging.Logger.getLogger("issue-reporter-ds")
       }
       MailScheduleRepository.createTablesIfNotExists(ds)
+      MailScheduleRepository.alterTablesIfNeeded(ds)
       DeadlineNotifyRepository.createTablesIfNotExists(ds)
       DeadlineNotifyRepository.alterTablesIfNeeded(ds)
       IssueNoteRepository.createTablesIfNotExists(ds)

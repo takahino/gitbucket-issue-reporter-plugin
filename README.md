@@ -23,9 +23,10 @@ GitBucket の Issue 一覧を Excel (XLSX) でダウンロード、定期メー�
 
 ### 2. Excel エクスポート
 - リポジトリの全 Issue (open/closed、PR 除く) を XLSX ファイルでダウンロード
-- 常に 20 列（開始予定日・完了予定日・進捗を含む）で出力
+- 出力する列と順序は「定期送信設定」画面で選択・並び替え可能（未設定時は全20列をデフォルト順で出力）
+- スケジュール送信・手動ダウンロードの両方に列設定が反映される
 
-#### 出力列
+#### 出力列（最大20列）
 
 | 列 | 内容 |
 |---|---|
@@ -53,6 +54,7 @@ GitBucket の Issue 一覧を Excel (XLSX) でダウンロード、定期メー�
 ### 3. Issue メール定期送信
 - Issue 一覧 Excel を指定した時刻・曜日に GitBucket ユーザーへ自動送信
 - 複数の宛先を設定可能（GitBucket ユーザー名のカンマ区切り）
+- 出力する列・順序を設定画面で選択・並び替え可能（手動ダウンロードにも同設定が適用）
 
 ### 4. Issue 備考・確認待ち・期間管理
 Issue 個別ページ (`/:owner/:repository/issues/:id`) に入力パネルを自動表示。
@@ -177,6 +179,7 @@ Issue 個別ページ (`/:owner/:repository/issues/:id`) では、Issue 本文�
 - **送信先ユーザー**: GitBucket に登録されたユーザーをチェックボックスで選択（複数選択可）
 - **送信時刻**: 時・分を指定
 - **曜日**: 送信する曜日をチェック（月〜日）
+- **出力列の選択・並び順**: チェックした列のみ Excel に出力。↑↓ ボタンで出力順を変更可能。この設定はスケジュール送信・手動ダウンロードの両方に反映される（未チェックは全20列デフォルト順）
 - SMTP 設定は GitBucket 管理画面 (`/_admin/system`) のものを使用
 - 設定保存後、**「今すぐ送信」** ボタンでテスト送信が可能
 - **「削除」** ボタンで設定を削除
@@ -204,9 +207,9 @@ Issue 個別ページ (`/:owner/:repository/issues/:id`) では、Issue 本文�
 
 ## データベース
 
-プラグインは以下のテーブルを自動作成します（GitBucket 組み込みの H2 データベース）。
+プラグインは以下のテーブルを自動作成します（GitBucket が使用するデータベース。H2 / PostgreSQL / MySQL など GitBucket の設定に従います）。
 
-### EXCEL_MAIL_SCHEDULE
+### REPORTER_MAIL_SCHEDULE
 
 メール定期送信設定を格納します。リポジトリごとに 1 レコード。
 
@@ -221,6 +224,7 @@ Issue 個別ページ (`/:owner/:repository/issues/:id`) では、Issue 本文�
 | `DAYS_OF_WEEK` | VARCHAR(20) | 送信曜日（`1`〜`7` のカンマ区切り、1=月） |
 | `ENABLED` | BOOLEAN | スケジュール有効/無効 |
 | `LAST_SENT_AT` | TIMESTAMP | 最終送信日時 |
+| `COLUMN_ORDER` | VARCHAR(500) | 出力列キーのカンマ区切り順（空文字 = 全20列デフォルト順） |
 
 ### REPORTER_DEADLINE_NOTIFY_SETTING
 

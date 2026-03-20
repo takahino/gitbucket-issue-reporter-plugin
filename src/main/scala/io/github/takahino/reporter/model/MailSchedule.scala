@@ -16,5 +16,6 @@ case class MailSchedule(
   minute:      Int,       // 0-59
   daysOfWeek:  String,    // "1,2,3,4,5" (1=Mon…7=Sun)
   enabled:     Boolean,
-  lastSentAt:  Option[LocalDateTime]
+  lastSentAt:  Option[LocalDateTime],
+  columnOrder: String     = ""  // カンマ区切りの列キー。"" = 全20列デフォルト順
 )

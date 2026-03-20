@@ -5,7 +5,7 @@ import gitbucket.core.service.{AccountService, RepositoryService}
 import gitbucket.core.util.{OwnerAuthenticator, ReadableUsersAuthenticator}
 import gitbucket.core.util.Implicits._
 import io.github.takahino.reporter.model.MailSchedule
-import io.github.takahino.reporter.service.{MailScheduleRepository, MailSendService}
+import io.github.takahino.reporter.service.{IssueReportService, MailScheduleRepository, MailSendService}
 import org.slf4j.LoggerFactory
 
 import scala.util.Try
@@ -44,23 +44,25 @@ class MailScheduleController
 
     val recipients = params.getOrElse("recipients", "")
       .split(",").map(_.trim).filter(_.nonEmpty).mkString(",")
-    val hour    = params.getOrElse("hour", "9").toIntOption.getOrElse(9)
-    val minute  = params.getOrElse("minute", "0").toIntOption.getOrElse(0)
-    val daysRaw = multiParams.getOrElse("daysOfWeek", Seq.empty)
-    val days    = if (daysRaw.isEmpty) "1,2,3,4,5" else daysRaw.mkString(",")
-    val enabled = params.getOrElse("enabled", "false") == "true"
+    val hour        = params.getOrElse("hour", "9").toIntOption.getOrElse(9)
+    val minute      = params.getOrElse("minute", "0").toIntOption.getOrElse(0)
+    val daysRaw     = multiParams.getOrElse("daysOfWeek", Seq.empty)
+    val days        = if (daysRaw.isEmpty) "1,2,3,4,5" else daysRaw.mkString(",")
+    val enabled     = params.getOrElse("enabled", "false") == "true"
+    val columnOrder = params.getOrElse("columnOrder", "").trim
 
     val existing = MailScheduleRepository.findByRepo(conn, repo.owner, repo.name)
     val schedule = MailSchedule(
-      id         = existing.map(_.id).getOrElse(0),
-      owner      = repo.owner,
-      repository = repo.name,
-      recipients = recipients,
-      hour       = hour.max(0).min(23),
-      minute     = minute.max(0).min(59),
-      daysOfWeek = days,
-      enabled    = enabled,
-      lastSentAt = existing.flatMap(_.lastSentAt)
+      id          = existing.map(_.id).getOrElse(0),
+      owner       = repo.owner,
+      repository  = repo.name,
+      recipients  = recipients,
+      hour        = hour.max(0).min(23),
+      minute      = minute.max(0).min(59),
+      daysOfWeek  = days,
+      enabled     = enabled,
+      lastSentAt  = existing.flatMap(_.lastSentAt),
+      columnOrder = columnOrder
     )
     MailScheduleRepository.upsert(conn, schedule)
 
@@ -126,6 +128,15 @@ class MailScheduleController
                            .getOrElse(Set("1","2","3","4","5"))
     val enabled = schedule.map(_.enabled).getOrElse(false)
 
+    val savedOrder  = schedule.map(_.columnOrder).getOrElse("")
+    val savedKeys   = if (savedOrder.trim.isEmpty) IssueReportService.DefaultColumnOrder
+                      else savedOrder.split(",").map(_.trim).filter(_.nonEmpty).toSeq
+    val savedSet    = if (savedOrder.trim.isEmpty) IssueReportService.DefaultColumnOrder.toSet
+                      else savedKeys.toSet
+    // 保存済みキーを先頭に置き、未登録キーを末尾に追加
+    val orderedKeys = savedKeys.filter(IssueReportService.ColumnDefByKey.contains) ++
+                      IssueReportService.DefaultColumnOrder.filterNot(savedSet.contains)
+
     val msgHtml = HtmlUtil.alertHtml(message)
 
     val userCheckboxes = allUsers.map { case (userName, fullName) =>
@@ -156,6 +167,19 @@ class MailScheduleController
          |  <button type="submit" class="btn btn-default btn-sm">今すぐ送信</button>
          |</form>""".stripMargin
     else ""
+
+    val colOrderRows = orderedKeys.map { key =>
+      val colDef  = IssueReportService.ColumnDefByKey(key)
+      val checked = if (savedSet.contains(key)) "checked" else ""
+      s"""<tr data-key="${HtmlUtil.escHtml(key)}">
+         |  <td style="padding:2px 6px;"><input type="checkbox" class="col-check" $checked></td>
+         |  <td style="padding:2px 6px;">${HtmlUtil.escHtml(colDef.header)}</td>
+         |  <td style="padding:2px 4px;">
+         |    <button type="button" class="btn btn-xs btn-default col-up">↑</button>
+         |    <button type="button" class="btn btn-xs btn-default col-down">↓</button>
+         |  </td>
+         |</tr>""".stripMargin
+    }.mkString("\n")
 
     val content =
       s"""$msgHtml
@@ -193,6 +217,18 @@ class MailScheduleController
          |    </div>
          |  </div>
          |
+         |  <div class="form-group">
+         |    <label class="control-label"><strong>出力列の選択・並び順</strong></label>
+         |    <p class="help-block" style="margin-bottom:6px;">チェックした列のみExcelに出力されます。↑↓で順序を変更できます。</p>
+         |    <input type="hidden" name="columnOrder" id="columnOrderField" value="${HtmlUtil.escHtml(savedOrder)}">
+         |    <table id="colOrderTable" class="table table-condensed" style="width:auto;max-width:400px;">
+         |      <thead><tr><th style="padding:2px 6px;">出力</th><th style="padding:2px 6px;">列名</th><th style="padding:2px 4px;">順序</th></tr></thead>
+         |      <tbody>
+         |        $colOrderRows
+         |      </tbody>
+         |    </table>
+         |  </div>
+         |
          |  <div class="form-actions" style="margin-top:20px;">
          |    <button type="submit" class="btn btn-primary">保存</button>
          |    $deleteBtn
@@ -208,7 +244,48 @@ class MailScheduleController
         |  var checks = document.querySelectorAll('input[name="dummyUser"]:checked');
         |  var names  = Array.from(checks).map(function(c){ return c.value; });
         |  document.getElementById('recipientsField').value = names.join(',');
-        |}""".stripMargin
+        |}
+        |
+        |function updateColumnOrder() {
+        |  var rows = document.querySelectorAll('#colOrderTable tbody tr');
+        |  var keys = [];
+        |  for (var i = 0; i < rows.length; i++) {
+        |    var cb = rows[i].querySelector('.col-check');
+        |    if (cb && cb.checked) keys.push(rows[i].getAttribute('data-key'));
+        |  }
+        |  document.getElementById('columnOrderField').value = keys.join(',');
+        |}
+        |
+        |(function() {
+        |  var tbody = document.querySelector('#colOrderTable tbody');
+        |  if (!tbody) return;
+        |
+        |  function moveRow(row, direction) {
+        |    if (direction === 'up') {
+        |      var prev = row.previousElementSibling;
+        |      if (prev) tbody.insertBefore(row, prev);
+        |    } else {
+        |      var next = row.nextElementSibling;
+        |      if (next) tbody.insertBefore(next, row);
+        |    }
+        |    updateColumnOrder();
+        |  }
+        |
+        |  tbody.addEventListener('change', function(e) {
+        |    if (e.target && e.target.classList.contains('col-check')) updateColumnOrder();
+        |  });
+        |
+        |  tbody.addEventListener('click', function(e) {
+        |    var btn = e.target;
+        |    if (!btn || btn.tagName.toLowerCase() !== 'button') return;
+        |    var row = btn.closest ? btn.closest('tr') : (function(el){ while(el && el.tagName!=='TR') el=el.parentNode; return el; })(btn);
+        |    if (!row) return;
+        |    if (btn.classList.contains('col-up'))   moveRow(row, 'up');
+        |    if (btn.classList.contains('col-down')) moveRow(row, 'down');
+        |  });
+        |
+        |  updateColumnOrder(); // ページ読み込み時に初期化
+        |})();""".stripMargin
 
     HtmlUtil.pageShell(
       title      = "Issue Excel 定期送信設定",
