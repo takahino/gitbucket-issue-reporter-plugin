@@ -25,8 +25,11 @@ jobs:
       - name: Run tests
         run: sbt test
 
-      - name: Build fat JAR
+      - name: Build fat JAR (POI bundled)
         run: sbt assembly
+
+      - name: Build thin JAR (POI excluded)
+        run: sbt -Dthin=true assembly
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

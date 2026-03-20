@@ -159,8 +159,9 @@ object IssueReportService {
   }
 
   /**
-   * Issue 一覧と期間データから xlsx を生成して OutputStream に書き出す。
+   * Issue 一覧から xlsx を生成して OutputStream に書き出す。
    * 常に 20 列（開始予定日・完了予定日・進捗(%) を含む）。
+   * gantt 列は事前に mergeWithPeriods で IssueRow にマージしておく。
    */
   def generateExcel(
     issues: Seq[IssueRow],

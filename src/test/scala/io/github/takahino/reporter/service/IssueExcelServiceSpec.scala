@@ -1,6 +1,6 @@
 package io.github.takahino.reporter.service
 
-import io.github.takahino.reporter.model.IssuePeriod
+import io.github.takahino.reporter.service.IssuePeriod
 import org.apache.poi.xssf.usermodel.XSSFSheet
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.scalatest.funsuite.AnyFunSuite
@@ -44,7 +44,8 @@ class IssueReportServiceSpec extends AnyFunSuite with Matchers {
     periods: Map[Int, IssuePeriod] = Map.empty
   ): XSSFWorkbook = {
     val out = new ByteArrayOutputStream()
-    IssueReportService.generateExcel(issues, periods, out)
+    val mergedIssues = IssueReportService.mergeWithPeriods(issues, periods)
+    IssueReportService.generateExcel(mergedIssues, out)
     new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray))
   }
 
@@ -88,20 +89,11 @@ class IssueReportServiceSpec extends AnyFunSuite with Matchers {
     wb.close()
   }
 
-  test("generateExcel: ganttなしのヘッダーは17列") {
+  test("generateExcel: ヘッダーは20列") {
     val wb      = makeWorkbook(Seq.empty)
     val sheet   = wb.getSheet("Issues")
     val lastCol = sheet.getRow(0).getLastCellNum
-    lastCol shouldBe 17
-    wb.close()
-  }
-
-  test("generateExcel: ganttありのヘッダーは21列") {
-    val issue   = row(issueId = 1, title = "Test")
-    val periods = Map(1 -> IssuePeriod(1, Some("2026-03-01"), Some("2026-03-31"), Some(50), None))
-    val wb      = makeWorkbook(Seq(issue), periods)
-    val sheet   = wb.getSheet("Issues")
-    sheet.getRow(0).getLastCellNum shouldBe 21
+    lastCol shouldBe 20
     wb.close()
   }
 
@@ -115,7 +107,7 @@ class IssueReportServiceSpec extends AnyFunSuite with Matchers {
     val wb    = makeWorkbook(Seq.empty)
     val sheet = wb.getSheet("Issues").asInstanceOf[XSSFSheet]
     sheet.getCTWorksheet.isSetAutoFilter shouldBe true
-    sheet.getCTWorksheet.getAutoFilter.getRef shouldBe "A1:Q1"
+    sheet.getCTWorksheet.getAutoFilter.getRef shouldBe "A1:T1"
     wb.close()
   }
 
@@ -179,21 +171,20 @@ class IssueReportServiceSpec extends AnyFunSuite with Matchers {
 
   test("generateExcel: gantt期間データがセルに反映される") {
     val issue   = row(issueId = 5, title = "Gantt Issue")
-    val periods = Map(5 -> IssuePeriod(5, Some("2026-03-01"), Some("2026-03-31"), Some(75), Some("3")))
+    val periods = Map(5 -> IssuePeriod(5, Some("2026-03-01"), Some("2026-03-31"), Some(75)))
     val wb      = makeWorkbook(Seq(issue), periods)
     val row1    = wb.getSheet("Issues").getRow(1)
 
     row1.getCell(17).getStringCellValue  shouldBe "2026-03-01"
     row1.getCell(18).getStringCellValue  shouldBe "2026-03-31"
     row1.getCell(19).getNumericCellValue shouldBe 75.0
-    row1.getCell(20).getStringCellValue  shouldBe "3"
     wb.close()
   }
 
   test("generateExcel: ganttデータがないIssueはgantt列が空文字") {
     val issue1  = row(issueId = 1, title = "With Gantt")
     val issue2  = row(issueId = 2, title = "Without Gantt")
-    val periods = Map(1 -> IssuePeriod(1, Some("2026-03-01"), Some("2026-03-31"), Some(50), None))
+    val periods = Map(1 -> IssuePeriod(1, Some("2026-03-01"), Some("2026-03-31"), Some(50)))
     val wb      = makeWorkbook(Seq(issue1, issue2), periods)
     val sheet   = wb.getSheet("Issues")
 

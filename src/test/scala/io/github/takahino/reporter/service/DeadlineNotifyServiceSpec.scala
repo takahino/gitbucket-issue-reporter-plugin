@@ -32,7 +32,8 @@ class DeadlineNotifyServiceSpec extends AnyFunSuite with Matchers {
     sendMinute            = 0,
     daysOfWeek            = "1,2,3,4,5",
     enabled               = true,
-    sortOrder             = "NO_DEADLINE_FIRST"
+    sortOrder             = "NO_DEADLINE_FIRST",
+    notifyNotStarted      = false
   )
 
   // -------------------------------------------------------------------------
