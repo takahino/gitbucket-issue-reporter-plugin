@@ -3,7 +3,7 @@ import gitbucket.core.service.SystemSettingsService.SystemSettings
 import io.github.gitbucket.solidbase.model.Version
 import io.github.takahino.reporter.controller.{DeadlineNotifyController, IssueNoteController, IssuePeriodController, IssueReportController, IssueTableController, MailScheduleController}
 import io.github.takahino.reporter.scheduler.MailScheduler
-import io.github.takahino.reporter.service.{DeadlineNotifyRepository, IssueNoteRepository, IssuePeriodRepository, MailScheduleRepository}
+import io.github.takahino.reporter.service.{DeadlineNotifyRepository, IssueNoteRepository, IssuePeriodRepository, IssueTableSettingsRepository, MailScheduleRepository}
 import org.slf4j.LoggerFactory
 
 import javax.servlet.ServletContext
@@ -57,6 +57,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
       DeadlineNotifyRepository.alterTablesIfNeeded(ds)
       IssueNoteRepository.createTablesIfNotExists(ds)
       IssuePeriodRepository.createTablesIfNotExists(ds)
+      IssueTableSettingsRepository.createTablesIfNotExists(ds)
       MailScheduler.start(ds)
     } catch {
       case e: Exception =>
