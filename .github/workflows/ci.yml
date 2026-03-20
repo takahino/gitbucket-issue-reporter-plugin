@@ -57,11 +57,19 @@ jobs:
       - name: Set up sbt
         uses: sbt/setup-sbt@v1
 
+      - name: Build fat JAR (POI bundled)
+        run: sbt assembly
+
+      - name: Save fat JAR
+        run: cp target/scala-2.13/gitbucket-issue-reporter-plugin-*.jar /tmp/fat.jar
+
       - name: Build thin JAR (POI excluded)
         run: sbt -Dthin=true assembly
 
-      - name: Build fat JAR (POI bundled)
-        run: sbt assembly
+      - name: Restore fat JAR
+        run: |
+          VERSION=$(ls target/scala-2.13/gitbucket-issue-reporter-plugin-*-thin.jar | sed 's/.*plugin-\(.*\)-thin.jar/\1/')
+          cp /tmp/fat.jar target/scala-2.13/gitbucket-issue-reporter-plugin-${VERSION}.jar
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
