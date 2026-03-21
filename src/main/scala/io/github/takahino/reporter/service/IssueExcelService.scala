@@ -3,7 +3,9 @@ package io.github.takahino.reporter.service
 import org.apache.poi.common.usermodel.HyperlinkType
 import org.apache.poi.ss.usermodel._
 import org.apache.poi.ss.util.CellRangeAddress
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import org.apache.poi.xddf.usermodel.chart._
+import org.apache.poi.xddf.usermodel.{XDDFColorRgbBinary, XDDFLineProperties, XDDFShapeProperties, XDDFSolidFillProperties}
+import org.apache.poi.xssf.usermodel.{XSSFSheet, XSSFWorkbook}
 
 import java.io.OutputStream
 import java.net.URLEncoder
@@ -302,6 +304,8 @@ object IssueReportService {
 
     sheet.createFreezePane(0, 1)
 
+    addBurnupSheet(wb, issues)
+
     wb.write(out)
     wb.close()
   }
@@ -327,6 +331,153 @@ object IssueReportService {
         progress  = p.flatMap(_.progress)
       )
     }
+
+  /**
+   * バーンアップチャートシート（"バーンアップ"）をワークブックに追加する。
+   * issues から登録日・完了日・完了予定日を集計し、日付ごとの累計データ表と
+   * 折れ線グラフを作成する。
+   * defaultDays: 完了予定日が未設定のオープン Issue に適用する仮期限（今日から何日後）
+   */
+  private def addBurnupSheet(wb: XSSFWorkbook, issues: Seq[IssueRow], defaultDays: Int = 7): Unit = {
+    if (issues.isEmpty) return
+
+    val fmtFull = java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm")
+    val fmtDay  = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
+    def parseDay(s: String): Option[java.time.LocalDate] = {
+      if (s == null || s.isEmpty) None
+      else scala.util.Try(java.time.LocalDate.parse(s.take(16), fmtFull))
+             .orElse(scala.util.Try(java.time.LocalDate.parse(s.take(10), fmtDay)))
+             .toOption
+    }
+
+    val today       = java.time.LocalDate.now()
+    val fallbackEnd = today.plusDays(defaultDays)
+
+    // (registeredDate, closeDateOpt, closed, endDateOpt)
+    val parsed = issues.flatMap { row =>
+      parseDay(row.createdAt).map { regDate =>
+        val closeDateOpt = if (row.closed) parseDay(row.closedDate) else None
+        val endDateOpt   = row.endDate
+          .flatMap(s => scala.util.Try(java.time.LocalDate.parse(s.take(10), fmtDay)).toOption)
+        (regDate, closeDateOpt, row.closed, endDateOpt)
+      }
+    }
+
+    if (parsed.isEmpty) return
+
+    val startDate    = parsed.map(_._1).minBy(_.toEpochDay)
+    val maxEndDate   = (parsed.flatMap(_._4) :+ fallbackEnd).maxBy(_.toEpochDay)
+    val effectiveEnd = if (maxEndDate.isBefore(startDate)) startDate else maxEndDate
+    val totalDays    = java.time.temporal.ChronoUnit.DAYS.between(startDate, effectiveEnd).toInt
+    val days         = (0L to totalDays).map(startDate.plusDays)
+
+    val totalCounts = days.map { d =>
+      parsed.count { case (reg, _, _, _) => !reg.isAfter(d) }
+    }
+    val completedCounts = days.map { d =>
+      parsed.count { case (_, closeDateOpt, closed, _) =>
+        closed && closeDateOpt.exists(!_.isAfter(d))
+      }
+    }
+    val plannedCompletedCounts = days.map { d =>
+      parsed.count { case (reg, closeDateOpt, closed, endDateOpt) =>
+        val plannedEnd = endDateOpt.getOrElse(
+          if (closed) closeDateOpt.getOrElse(fallbackEnd) else fallbackEnd)
+        !reg.isAfter(d) && !plannedEnd.isAfter(d)
+      }
+    }
+
+    val sheet: XSSFSheet = wb.createSheet("バーンアップ")
+
+    val headerStyle = {
+      val s = wb.createCellStyle()
+      val f = wb.createFont()
+      f.setBold(true)
+      s.setFont(f)
+      s.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex)
+      s.setFillPattern(FillPatternType.SOLID_FOREGROUND)
+      s.setBorderBottom(BorderStyle.THIN)
+      s
+    }
+
+    val headers = Seq("日付", "登録数（累計）", "計画完了数（累計）", "完了数（累計）")
+    val hRow    = sheet.createRow(0)
+    headers.zipWithIndex.foreach { case (h, i) =>
+      val cell = hRow.createCell(i)
+      cell.setCellValue(h)
+      cell.setCellStyle(headerStyle)
+    }
+
+    days.zipWithIndex.foreach { case (d, i) =>
+      val row = sheet.createRow(i + 1)
+      row.createCell(0).setCellValue(d.format(fmtDay))
+      row.createCell(1).setCellValue(totalCounts(i).toDouble)
+      row.createCell(2).setCellValue(plannedCompletedCounts(i).toDouble)
+      row.createCell(3).setCellValue(completedCounts(i).toDouble)
+    }
+
+    sheet.setColumnWidth(0, 12 * 256)
+    sheet.setColumnWidth(1, 18 * 256)
+    sheet.setColumnWidth(2, 22 * 256)
+    sheet.setColumnWidth(3, 18 * 256)
+    sheet.setAutoFilter(new CellRangeAddress(0, 0, 0, 3))
+    sheet.createFreezePane(0, 1)
+
+    // グラフはデータが2点以上ある場合のみ作成
+    if (days.size >= 2) {
+      val numRows = days.size
+      val drawing = sheet.createDrawingPatriarch()
+      val anchor  = wb.getCreationHelper.createClientAnchor()
+      anchor.setCol1(5); anchor.setRow1(1)
+      anchor.setCol2(15); anchor.setRow2(30)
+
+      val chart  = drawing.createChart(anchor)
+      val legend = chart.getOrAddLegend()
+      legend.setPosition(LegendPosition.BOTTOM)
+
+      val catAxis = chart.createCategoryAxis(AxisPosition.BOTTOM)
+      val valAxis = chart.createValueAxis(AxisPosition.LEFT)
+      valAxis.setCrosses(AxisCrosses.AUTO_ZERO)
+
+      val catSource = XDDFDataSourcesFactory.fromStringCellRange(
+        sheet, new CellRangeAddress(1, numRows, 0, 0))
+
+      val lineData = chart.createData(ChartTypes.LINE, catAxis, valAxis)
+        .asInstanceOf[XDDFLineChartData]
+
+      // (列インデックス, 系列名, RGB色) — Webチャートと同じ色分け
+      val seriesDefs = Seq(
+        (1, "登録数（累計）",    (0x96, 0x96, 0x96)),  // グレー
+        (2, "計画完了数（累計）", (0xFF, 0x63, 0x84)),  // 赤
+        (3, "完了数（累計）",    (0x36, 0xA2, 0xEB))   // 青
+      )
+
+      seriesDefs.foreach { case (colIdx, title, (r, g, b)) =>
+        val numSource = XDDFDataSourcesFactory.fromNumericCellRange(
+          sheet, new CellRangeAddress(1, numRows, colIdx, colIdx))
+        val s = lineData.addSeries(catSource, numSource)
+        s.setTitle(title, null)
+
+        // 線の色を設定（XDDFShapeProperties 経由）
+        val color     = new XDDFColorRgbBinary(Array(r.toByte, g.toByte, b.toByte))
+        val solidFill = new XDDFSolidFillProperties(color)
+        val lineProp  = new XDDFLineProperties()
+        lineProp.setFillProperties(solidFill)
+        val shapeProp = new XDDFShapeProperties()
+        shapeProp.setLineProperties(lineProp)
+        s.setShapeProperties(shapeProp)
+
+        // マーカーを非表示にして線のみ表示（setMarkerStyle はサブクラスのため反射利用）
+        try {
+          s.getClass.getMethod("setMarkerStyle", classOf[MarkerStyle])
+            .invoke(s, MarkerStyle.NONE)
+        } catch { case _: Exception => () }
+      }
+
+      chart.plot(lineData)
+    }
+  }
 
   /** ファイル名を RFC 5987 形式にエンコードする */
   def encodeFilename(filename: String): String =
