@@ -8,7 +8,7 @@ import gitbucket.core.util.Implicits._
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-class BurndownController
+class BurnupController
     extends ControllerBase
     with RepositoryService
     with AccountService
@@ -167,6 +167,14 @@ class BurndownController
          |      <td style="padding:6px 12px;white-space:nowrap;font-weight:bold;color:rgba(255,99,132,0.9);">計画完了数（累計）</td>
          |      <td style="padding:6px 12px;">その日までに完了予定だったIssueの累計数。完了予定日が未設定のIssueは「今日＋未設定期限（日）」を期限とみなす。</td>
          |    </tr>
+         |    <tr style="border-bottom:1px solid #eee;">
+         |      <td style="padding:6px 12px;white-space:nowrap;font-weight:bold;color:rgba(255,159,64,0.95);">未着手（オープン件数）</td>
+         |      <td style="padding:6px 12px;">その日時点でオープンなIssueのうち、進捗が0%（未入力は0%扱い）の件数。</td>
+         |    </tr>
+         |    <tr style="border-bottom:1px solid #eee;">
+         |      <td style="padding:6px 12px;white-space:nowrap;font-weight:bold;color:rgba(153,102,255,0.95);">着手（件数）</td>
+         |      <td style="padding:6px 12px;">その日までに登録されたIssueのうち、(1) その日時点でオープンかつ進捗1%以上、(2) その日までにクローズ済み（進捗率は不問）。クローズは実質「やり切った」ため着手扱いとする。</td>
+         |    </tr>
          |    <tr>
          |      <td style="padding:6px 12px;white-space:nowrap;font-weight:bold;color:rgba(54,162,235,1);">完了数（累計）</td>
          |      <td style="padding:6px 12px;">その日までに実際にクローズされたIssueの累計数。</td>
@@ -267,6 +275,29 @@ class BurndownController
          |        pointRadius: largeDataset ? 0 : 2,
          |        borderWidth: 2,
          |        borderDash: [6, 3]
+         |      },
+         |      {
+         |        label: '未着手（オープン）',
+         |        data: d.notStarted || [],
+         |        borderColor: 'rgba(255,159,64,0.95)',
+         |        backgroundColor: 'transparent',
+         |        fill: false,
+         |        stepped: true,
+         |        tension: 0,
+         |        pointRadius: largeDataset ? 0 : 2,
+         |        borderWidth: 2
+         |      },
+         |      {
+         |        label: '着手（オープン1%＋クローズ）',
+         |        data: d.inProgress || [],
+         |        borderColor: 'rgba(153,102,255,0.95)',
+         |        backgroundColor: 'transparent',
+         |        fill: false,
+         |        stepped: true,
+         |        tension: 0,
+         |        pointRadius: largeDataset ? 0 : 2,
+         |        borderWidth: 2,
+         |        borderDash: [2, 2]
          |      },
          |      {
          |        label: '完了数（累計）',
@@ -396,7 +427,7 @@ class BurndownController
         "       AND ic.ISSUE_ID = i.ISSUE_ID AND ic.ACTION IN ('close','close_comment'))," +
         "    i.UPDATED_DATE" +
         "  ) AS CLOSE_DATE," +
-        "  p.END_DATE " +
+        "  p.END_DATE, p.PROGRESS " +
         "FROM ISSUE i " +
         "LEFT JOIN REPORTER_ISSUE_PERIOD p ON p.OWNER = i.USER_NAME" +
         "  AND p.REPOSITORY_NAME = i.REPOSITORY_NAME AND p.ISSUE_ID = i.ISSUE_ID " +
@@ -425,18 +456,22 @@ class BurndownController
 
       val rs = ps.executeQuery()
 
-      // (registeredDate, closeDate, closed, endDate)
-      val issues = scala.collection.mutable.ArrayBuffer.empty[(LocalDate, LocalDate, Boolean, Option[LocalDate])]
+      // (registeredDate, closeDate, closed, endDate, progress)
+      val issues = scala.collection.mutable.ArrayBuffer.empty[(LocalDate, LocalDate, Boolean, Option[LocalDate], Option[Int])]
       while (rs.next()) {
         val endDateOpt = Option(rs.getString(4)).flatMap { s =>
           try Some(LocalDate.parse(s.take(10), fmt)) catch { case _: Exception => None }
         }
-        issues += ((toLocalDate(rs.getString(1)), toLocalDate(rs.getString(3)), rs.getBoolean(2), endDateOpt))
+        val progressOpt = {
+          val v = rs.getInt(5)
+          if (rs.wasNull()) None else Some(v)
+        }
+        issues += ((toLocalDate(rs.getString(1)), toLocalDate(rs.getString(3)), rs.getBoolean(2), endDateOpt, progressOpt))
       }
       rs.close(); ps.close()
 
       if (issues.isEmpty) {
-        """{"startDate":null,"endDate":null,"today":null,"totalIssues":0,"labels":[],"total":[],"completed":[],"plannedCompleted":[]}"""
+        """{"startDate":null,"endDate":null,"today":null,"totalIssues":0,"labels":[],"total":[],"completed":[],"plannedCompleted":[],"notStarted":[],"inProgress":[]}"""
       } else {
         val today     = LocalDate.now()
         val startDate = issues.map(_._1).minBy(_.toEpochDay)
@@ -449,32 +484,43 @@ class BurndownController
 
         val days = (0L to totalDays).map(startDate.plusDays)
 
-        // 1パスで3系列を同時集計: O(days × issues)
+        // 1パスで系列を同時集計: O(days × issues)
+        // 未着手: その日オープンかつ進捗0%（未設定は0%）。着手: オープンで1%以上、またはその日までにクローズ済み（進捗不問）。
         val counts = days.map { d =>
           var total = 0; var completed = 0; var planned = 0
-          issues.foreach { case (reg, closeDate, closed, endDateOpt) =>
+          var notStartedOpen = 0; var inProgressCount = 0
+          issues.foreach { case (reg, closeDate, closed, endDateOpt, progressOpt) =>
             if (!reg.isAfter(d)) {
               total += 1
               if (closed && !closeDate.isAfter(d)) completed += 1
               val plannedEnd = endDateOpt.getOrElse(if (closed) closeDate else fallbackEnd)
               if (!plannedEnd.isAfter(d)) planned += 1
+              val closedByD = closed && !closeDate.isAfter(d)
+              val openOnDay = !closedByD
+              val p         = progressOpt.getOrElse(0)
+              if (openOnDay && p <= 0) notStartedOpen += 1
+              if (closedByD || (openOnDay && p >= 1)) inProgressCount += 1
             }
           }
-          (total, completed, planned)
+          (total, completed, planned, notStartedOpen, inProgressCount)
         }
         val totalCounts            = counts.map(_._1)
         val completedCounts        = counts.map(_._2)
         val plannedCompletedCounts = counts.map(_._3)
+        val notStartedCounts       = counts.map(_._4)
+        val inProgressCounts       = counts.map(_._5)
 
         val labelsJson           = days.map(d => s""""${d.format(fmt)}"""").mkString("[", ",", "]")
         val totalJson            = totalCounts.mkString("[", ",", "]")
         val completedJson        = completedCounts.mkString("[", ",", "]")
         val plannedCompletedJson = plannedCompletedCounts.mkString("[", ",", "]")
+        val notStartedJson       = notStartedCounts.mkString("[", ",", "]")
+        val inProgressJson       = inProgressCounts.mkString("[", ",", "]")
         val startStr             = startDate.format(fmt)
         val endStr               = effectiveEnd.format(fmt)
         val todayStr             = today.format(fmt)
 
-        s"""{"startDate":"$startStr","endDate":"$endStr","today":"$todayStr","totalIssues":$totalIssues,"labels":$labelsJson,"total":$totalJson,"completed":$completedJson,"plannedCompleted":$plannedCompletedJson}"""
+        s"""{"startDate":"$startStr","endDate":"$endStr","today":"$todayStr","totalIssues":$totalIssues,"labels":$labelsJson,"total":$totalJson,"completed":$completedJson,"plannedCompleted":$plannedCompletedJson,"notStarted":$notStartedJson,"inProgress":$inProgressJson}"""
       }
     } catch {
       case e: Exception =>

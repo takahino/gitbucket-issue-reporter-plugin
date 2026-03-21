@@ -1,7 +1,7 @@
 import gitbucket.core.plugin.PluginRegistry
 import gitbucket.core.service.SystemSettingsService.SystemSettings
 import io.github.gitbucket.solidbase.model.Version
-import io.github.takahino.reporter.controller.{BurndownController, DeadlineNotifyController, GanttController, IssueNoteController, IssuePeriodController, IssueReportController, IssueTableController, MailScheduleController}
+import io.github.takahino.reporter.controller.{BurnupController, DeadlineNotifyController, GanttController, IssueNoteController, IssuePeriodController, IssueReportController, IssueTableController, MailScheduleController}
 import io.github.takahino.reporter.scheduler.MailScheduler
 import io.github.takahino.reporter.service.{DeadlineNotifyRepository, IssueNoteRepository, IssuePeriodRepository, IssueTableSettingsRepository, MailScheduleRepository}
 import org.slf4j.LoggerFactory
@@ -27,7 +27,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
     "/*" -> new DeadlineNotifyController(),
     "/*" -> new IssueNoteController(),
     "/*" -> new IssuePeriodController(),
-    "/*" -> new BurndownController(),
+    "/*" -> new BurnupController(),
     "/*" -> new GanttController()
   )
 
