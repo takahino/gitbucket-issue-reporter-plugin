@@ -90,11 +90,11 @@ class IssueReportServiceSpec extends AnyFunSuite with Matchers {
     wb.close()
   }
 
-  test("generateExcel: ヘッダーは20列") {
+  test("generateExcel: ヘッダーは22列") {
     val wb      = makeWorkbook(Seq.empty)
     val sheet   = wb.getSheet("Issues")
     val lastCol = sheet.getRow(0).getLastCellNum
-    lastCol shouldBe 20
+    lastCol shouldBe 22
     wb.close()
   }
 
@@ -108,7 +108,7 @@ class IssueReportServiceSpec extends AnyFunSuite with Matchers {
     val wb    = makeWorkbook(Seq.empty)
     val sheet = wb.getSheet("Issues").asInstanceOf[XSSFSheet]
     sheet.getCTWorksheet.isSetAutoFilter shouldBe true
-    sheet.getCTWorksheet.getAutoFilter.getRef shouldBe "A1:T1"
+    sheet.getCTWorksheet.getAutoFilter.getRef shouldBe "A1:V1"
     wb.close()
   }
 
@@ -198,8 +198,8 @@ class IssueReportServiceSpec extends AnyFunSuite with Matchers {
   // resolveColumns
   // -------------------------------------------------------------------------
 
-  test("resolveColumns: 空文字列は全20列を返す") {
-    IssueReportService.resolveColumns("").size shouldBe 20
+  test("resolveColumns: 空文字列は全22列を返す") {
+    IssueReportService.resolveColumns("").size shouldBe 22
   }
 
   test("resolveColumns: 有効なキーのみを返す") {
@@ -221,10 +221,10 @@ class IssueReportServiceSpec extends AnyFunSuite with Matchers {
   // generateExcel with columnOrder
   // -------------------------------------------------------------------------
 
-  test("generateExcel: columnOrder=''は20列出力") {
+  test("generateExcel: columnOrder=''は22列出力") {
     val wb    = makeWorkbook(Seq.empty, columnOrder = "")
     val sheet = wb.getSheet("Issues")
-    sheet.getRow(0).getLastCellNum shouldBe 20
+    sheet.getRow(0).getLastCellNum shouldBe 22
     wb.close()
   }
 
