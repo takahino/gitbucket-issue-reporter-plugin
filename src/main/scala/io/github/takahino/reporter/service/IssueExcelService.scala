@@ -51,7 +51,9 @@ object IssueReportService {
     ColumnDef("milestone_due_date",   "マイルストーン期日",   r => r.milestoneDueDate),
     ColumnDef("start_date",           "開始予定日",          r => r.startDate.getOrElse("")),
     ColumnDef("end_date",             "完了予定日",          r => r.endDate.getOrElse("")),
-    ColumnDef("progress",             "進捗(%)",            r => r.progress.map(_.toString).getOrElse(""),  isNumeric = true)
+    ColumnDef("progress",             "進捗(%)",            r => r.progress.map(_.toString).getOrElse(""),  isNumeric = true),
+    ColumnDef("estimated_hours",      "見積工数(h)",         r => r.estimatedHours.map(_.toString).getOrElse(""), isNumeric = true),
+    ColumnDef("actual_hours",         "実績工数(h)",         r => r.actualHours.map(_.toString).getOrElse(""),    isNumeric = true)
   )
 
   val ColumnDefByKey: Map[String, ColumnDef] = AllColumns.map(c => c.key -> c).toMap
@@ -97,7 +99,9 @@ object IssueReportService {
     labelIds:               Seq[Int] = Nil,
     startDate:              Option[String] = None,
     endDate:                Option[String] = None,
-    progress:               Option[Int]    = None
+    progress:               Option[Int]    = None,
+    estimatedHours:         Option[Double] = None,
+    actualHours:            Option[Double] = None
   )
 
   /**
@@ -326,9 +330,11 @@ object IssueReportService {
     issues.map { i =>
       val p = periods.get(i.issueId)
       i.copy(
-        startDate = p.flatMap(_.startDate),
-        endDate   = p.flatMap(_.endDate),
-        progress  = p.flatMap(_.progress)
+        startDate      = p.flatMap(_.startDate),
+        endDate        = p.flatMap(_.endDate),
+        progress       = p.flatMap(_.progress),
+        estimatedHours = p.flatMap(_.estimatedHours),
+        actualHours    = p.flatMap(_.actualHours)
       )
     }
 

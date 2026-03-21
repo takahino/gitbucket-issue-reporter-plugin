@@ -1,7 +1,7 @@
 import gitbucket.core.plugin.PluginRegistry
 import gitbucket.core.service.SystemSettingsService.SystemSettings
 import io.github.gitbucket.solidbase.model.Version
-import io.github.takahino.reporter.controller.{BurndownController, DeadlineNotifyController, IssueNoteController, IssuePeriodController, IssueReportController, IssueTableController, MailScheduleController}
+import io.github.takahino.reporter.controller.{BurndownController, DeadlineNotifyController, GanttController, IssueNoteController, IssuePeriodController, IssueReportController, IssueTableController, MailScheduleController}
 import io.github.takahino.reporter.scheduler.MailScheduler
 import io.github.takahino.reporter.service.{DeadlineNotifyRepository, IssueNoteRepository, IssuePeriodRepository, IssueTableSettingsRepository, MailScheduleRepository}
 import org.slf4j.LoggerFactory
@@ -27,7 +27,8 @@ class Plugin extends gitbucket.core.plugin.Plugin {
     "/*" -> new DeadlineNotifyController(),
     "/*" -> new IssueNoteController(),
     "/*" -> new IssuePeriodController(),
-    "/*" -> new BurndownController()
+    "/*" -> new BurndownController(),
+    "/*" -> new GanttController()
   )
 
   override def initialize(
@@ -58,6 +59,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
       DeadlineNotifyRepository.alterTablesIfNeeded(ds)
       IssueNoteRepository.createTablesIfNotExists(ds)
       IssuePeriodRepository.createTablesIfNotExists(ds)
+      IssuePeriodRepository.alterTablesIfNeeded(ds)
       IssueTableSettingsRepository.createTablesIfNotExists(ds)
       MailScheduler.start(ds)
     } catch {
@@ -134,20 +136,27 @@ class Plugin extends gitbucket.core.plugin.Plugin {
       return null;
     }
 
-    // btn4: Burndown チャート（新しいタブで開く）
+    // btn4: Burnup チャート（新しいタブで開く）
     var btn4 = makeBtn('/' + owner + '/' + repo + '/issues/burnup',
       'pulse', 'Burnup');
     btn4.target = '_blank';
+
+    // btn5: Gantt チャート（新しいタブで開く）
+    var btn5 = makeBtn('/' + owner + '/' + repo + '/issues/gantt',
+      'graph', 'Gantt');
+    btn5.target = '_blank';
 
     var refEl = findTarget();
     if (refEl) {
       insertBtn(btn0, refEl);
       insertBtn(btn1, refEl);
       insertBtn(btn4, refEl);
+      insertBtn(btn5, refEl);
     } else {
       addFixedBtn(btn0, 20);
       addFixedBtn(btn1, 60);
       addFixedBtn(btn4, 180);
+      addFixedBtn(btn5, 220);
     }
 
     // 書き込み権限チェック — Manager以上のみ btn2・btn3 を表示
@@ -279,6 +288,16 @@ class Plugin extends gitbucket.core.plugin.Plugin {
       '<input type="date" id="ir-end-date" style="border:1px solid #ccc;border-radius:3px;padding:4px;font-size:12px;"></div>' +
       '<div><label style="font-size:12px;color:#555;">\u9032\u6357(%)</label><br>' +
       '<input type="number" id="ir-progress" min="0" max="100" style="width:70px;border:1px solid #ccc;border-radius:3px;padding:4px;font-size:12px;"></div>' +
+      '<div style="font-size:11px;color:#555;line-height:1.6;border-left:3px solid #ddd;padding-left:8px;">' +
+      '<div>0%\uff1a\u672a\u7740\u624b</div>' +
+      '<div>1\uff5e66%\uff1a\u9032\u884c\u4e2d</div>' +
+      '<div>67\uff5e99%\uff1a\u3082\u3046\u3059\u3050\u5b8c\u4e86</div>' +
+      '<div>100%\uff1a\u5b8c\u4e86</div>' +
+      '</div>' +
+      '<div><label style="font-size:12px;color:#555;">\u898b\u7a4d\u5de5\u6570(h)</label><br>' +
+      '<input type="number" id="ir-estimated-hours" min="0" step="0.5" style="width:80px;border:1px solid #ccc;border-radius:3px;padding:4px;font-size:12px;"></div>' +
+      '<div><label style="font-size:12px;color:#555;">\u5b9f\u7e3e\u5de5\u6570(h)</label><br>' +
+      '<input type="number" id="ir-actual-hours" min="0" step="0.5" style="width:80px;border:1px solid #ccc;border-radius:3px;padding:4px;font-size:12px;"></div>' +
       '</div>' +
       '<div style="margin-top:8px;">' +
       '<button id="ir-period-save" class="btn btn-sm btn-primary" style="font-size:12px;">\u4fdd\u5b58</button>' +
@@ -308,6 +327,8 @@ class Plugin extends gitbucket.core.plugin.Plugin {
           if (pd.startDate) document.getElementById('ir-start-date').value = pd.startDate;
           if (pd.endDate)   document.getElementById('ir-end-date').value   = pd.endDate;
           if (pd.progress != null) document.getElementById('ir-progress').value = pd.progress;
+          if (pd.estimatedHours != null) document.getElementById('ir-estimated-hours').value = pd.estimatedHours;
+          if (pd.actualHours    != null) document.getElementById('ir-actual-hours').value    = pd.actualHours;
         } catch(e) {}
       }
     };
@@ -315,9 +336,11 @@ class Plugin extends gitbucket.core.plugin.Plugin {
 
     // 期間保存ボタン
     document.getElementById('ir-period-save').onclick = function() {
-      var startDate = document.getElementById('ir-start-date').value;
-      var endDate   = document.getElementById('ir-end-date').value;
-      var progress  = document.getElementById('ir-progress').value;
+      var startDate      = document.getElementById('ir-start-date').value;
+      var endDate        = document.getElementById('ir-end-date').value;
+      var progress       = document.getElementById('ir-progress').value;
+      var estimatedHours = document.getElementById('ir-estimated-hours').value;
+      var actualHours    = document.getElementById('ir-actual-hours').value;
       var statusEl2 = document.getElementById('ir-period-status');
       statusEl2.textContent = '\u4fdd\u5b58\u4e2d...';
       statusEl2.style.color = '#666';
@@ -341,7 +364,9 @@ class Plugin extends gitbucket.core.plugin.Plugin {
       xhrP2.send(
         'startDate=' + encodeURIComponent(startDate) +
         '&endDate=' + encodeURIComponent(endDate) +
-        '&progress=' + encodeURIComponent(progress)
+        '&progress=' + encodeURIComponent(progress) +
+        '&estimatedHours=' + encodeURIComponent(estimatedHours) +
+        '&actualHours=' + encodeURIComponent(actualHours)
       );
     };
   }

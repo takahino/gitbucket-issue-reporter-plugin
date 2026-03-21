@@ -239,6 +239,16 @@ class IssueTableController
          |      label: '進捗(%)',
          |      val: function(i){ return (i.period && i.period.progress != null) ? i.period.progress : -1; },
          |      render: function(i){ var p=i.period||{}; return '<td style="text-align:right;">'+(p.progress != null ? p.progress : '')+'</td>'; }
+         |    },
+         |    { key: 'estimated_hours',
+         |      label: '見積工数(h)',
+         |      val: function(i){ return (i.period && i.period.estimatedHours != null) ? i.period.estimatedHours : -1; },
+         |      render: function(i){ var p=i.period||{}; return '<td style="text-align:right;">'+(p.estimatedHours != null ? p.estimatedHours : '')+'</td>'; }
+         |    },
+         |    { key: 'actual_hours',
+         |      label: '実績工数(h)',
+         |      val: function(i){ return (i.period && i.period.actualHours != null) ? i.period.actualHours : -1; },
+         |      render: function(i){ var p=i.period||{}; return '<td style="text-align:right;">'+(p.actualHours != null ? p.actualHours : '')+'</td>'; }
          |    }
          |  ];
          |
@@ -794,7 +804,7 @@ class IssueTableController
     implicit val session = request2Session(request)
     val conn = session.conn
 
-    val defaultColOrder = "issue_id,title,status,creator,assignee,milestone,labels,waiting,conf_detail,ms_due,note,comments,created_at,updated_at,start_date,end_date,progress"
+    val defaultColOrder = "issue_id,title,status,creator,assignee,milestone,labels,waiting,conf_detail,ms_due,note,comments,created_at,updated_at,start_date,end_date,progress,estimated_hours,actual_hours"
     val defaultHlRules  = """[{"enabled":true,"field":"ms_due","cond":"overdue","days":0,"color":"#ffe0e0"},{"enabled":true,"field":"end_date","cond":"overdue","days":0,"color":"#ffe0e0"}]"""
 
     IssueTableSettingsRepository.findByRepo(conn, repository.owner, repository.name) match {
@@ -853,10 +863,12 @@ class IssueTableController
     val labels     = issues.flatMap(_.labels.split(", ").map(_.trim)).filter(_.nonEmpty).distinct.sorted
 
     val issueJsons = issues.map { i =>
-      val startDate   = HtmlUtil.escJson(i.startDate.getOrElse(""))
-      val endDate     = HtmlUtil.escJson(i.endDate.getOrElse(""))
-      val progressStr = i.progress.map(_.toString).getOrElse("null")
-      s"""{"issueId":${i.issueId},"title":"${HtmlUtil.escJson(i.title)}","closed":${i.closed},"assignee":"${HtmlUtil.escJson(i.assignee)}","milestone":"${HtmlUtil.escJson(i.milestone)}","labels":"${HtmlUtil.escJson(i.labels)}","createdAt":"${HtmlUtil.escJson(i.createdAt)}","updatedAt":"${HtmlUtil.escJson(i.updatedAt)}","milestoneDueDate":"${HtmlUtil.escJson(i.milestoneDueDate)}","closedDate":"${HtmlUtil.escJson(i.closedDate)}","creator":"${HtmlUtil.escJson(i.creator)}","commentCount":${i.commentCount},"url":"${HtmlUtil.escJson(i.url)}","note":"${HtmlUtil.escJson(i.note)}","waitingForConfirmation":${i.waitingForConfirmation},"confirmationDetail":"${HtmlUtil.escJson(i.confirmationDetail)}","period":{"startDate":"$startDate","endDate":"$endDate","progress":$progressStr}}"""
+      val startDate      = HtmlUtil.escJson(i.startDate.getOrElse(""))
+      val endDate        = HtmlUtil.escJson(i.endDate.getOrElse(""))
+      val progressStr    = i.progress.map(_.toString).getOrElse("null")
+      val estHoursStr    = i.estimatedHours.map(_.toString).getOrElse("null")
+      val actHoursStr    = i.actualHours.map(_.toString).getOrElse("null")
+      s"""{"issueId":${i.issueId},"title":"${HtmlUtil.escJson(i.title)}","closed":${i.closed},"assignee":"${HtmlUtil.escJson(i.assignee)}","milestone":"${HtmlUtil.escJson(i.milestone)}","labels":"${HtmlUtil.escJson(i.labels)}","createdAt":"${HtmlUtil.escJson(i.createdAt)}","updatedAt":"${HtmlUtil.escJson(i.updatedAt)}","milestoneDueDate":"${HtmlUtil.escJson(i.milestoneDueDate)}","closedDate":"${HtmlUtil.escJson(i.closedDate)}","creator":"${HtmlUtil.escJson(i.creator)}","commentCount":${i.commentCount},"url":"${HtmlUtil.escJson(i.url)}","note":"${HtmlUtil.escJson(i.note)}","waitingForConfirmation":${i.waitingForConfirmation},"confirmationDetail":"${HtmlUtil.escJson(i.confirmationDetail)}","period":{"startDate":"$startDate","endDate":"$endDate","progress":$progressStr,"estimatedHours":$estHoursStr,"actualHours":$actHoursStr}}"""
     }.mkString(",")
 
     def jsonArray(xs: Seq[String]) =

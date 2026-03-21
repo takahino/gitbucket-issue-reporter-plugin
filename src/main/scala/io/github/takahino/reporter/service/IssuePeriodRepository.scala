@@ -5,10 +5,12 @@ import javax.sql.DataSource
 import scala.collection.mutable
 
 case class IssuePeriod(
-  issueId:   Int,
-  startDate: Option[String],
-  endDate:   Option[String],
-  progress:  Option[Int]
+  issueId:        Int,
+  startDate:      Option[String],
+  endDate:        Option[String],
+  progress:       Option[Int],
+  estimatedHours: Option[Double] = None,
+  actualHours:    Option[Double] = None
 )
 
 object IssuePeriodRepository {
@@ -33,9 +35,25 @@ object IssuePeriodRepository {
     )
   }
 
+  def alterTablesIfNeeded(ds: DataSource): Unit = {
+    val conn = ds.getConnection()
+    try alterTablesIfNeeded(conn)
+    finally conn.close()
+  }
+
+  def alterTablesIfNeeded(conn: Connection): Unit = {
+    val stmt = conn.createStatement()
+    try {
+      stmt.execute("ALTER TABLE REPORTER_ISSUE_PERIOD ADD COLUMN IF NOT EXISTS ESTIMATED_HOURS DECIMAL(8,2)")
+      stmt.execute("ALTER TABLE REPORTER_ISSUE_PERIOD ADD COLUMN IF NOT EXISTS ACTUAL_HOURS DECIMAL(8,2)")
+    } finally {
+      stmt.close()
+    }
+  }
+
   def findAllPeriods(conn: Connection, owner: String, repo: String): Map[Int, IssuePeriod] = {
     val ps = conn.prepareStatement(
-      "SELECT ISSUE_ID, START_DATE, END_DATE, PROGRESS FROM REPORTER_ISSUE_PERIOD WHERE OWNER = ? AND REPOSITORY_NAME = ?"
+      "SELECT ISSUE_ID, START_DATE, END_DATE, PROGRESS, ESTIMATED_HOURS, ACTUAL_HOURS FROM REPORTER_ISSUE_PERIOD WHERE OWNER = ? AND REPOSITORY_NAME = ?"
     )
     ps.setString(1, owner)
     ps.setString(2, repo)
@@ -44,10 +62,12 @@ object IssuePeriodRepository {
     while (rs.next()) {
       val id = rs.getInt("ISSUE_ID")
       buf(id) = IssuePeriod(
-        issueId   = id,
-        startDate = Option(rs.getString("START_DATE")),
-        endDate   = Option(rs.getString("END_DATE")),
-        progress  = { val v = rs.getInt("PROGRESS"); if (rs.wasNull()) None else Some(v) }
+        issueId        = id,
+        startDate      = Option(rs.getString("START_DATE")),
+        endDate        = Option(rs.getString("END_DATE")),
+        progress       = { val v = rs.getInt("PROGRESS"); if (rs.wasNull()) None else Some(v) },
+        estimatedHours = { val v = rs.getDouble("ESTIMATED_HOURS"); if (rs.wasNull()) None else Some(v) },
+        actualHours    = { val v = rs.getDouble("ACTUAL_HOURS"); if (rs.wasNull()) None else Some(v) }
       )
     }
     rs.close(); ps.close()
@@ -56,17 +76,19 @@ object IssuePeriodRepository {
 
   def findPeriod(conn: Connection, owner: String, repo: String, issueId: Int): IssuePeriod = {
     val ps = conn.prepareStatement(
-      "SELECT ISSUE_ID, START_DATE, END_DATE, PROGRESS FROM REPORTER_ISSUE_PERIOD WHERE OWNER = ? AND REPOSITORY_NAME = ? AND ISSUE_ID = ?"
+      "SELECT ISSUE_ID, START_DATE, END_DATE, PROGRESS, ESTIMATED_HOURS, ACTUAL_HOURS FROM REPORTER_ISSUE_PERIOD WHERE OWNER = ? AND REPOSITORY_NAME = ? AND ISSUE_ID = ?"
     )
     ps.setString(1, owner)
     ps.setString(2, repo)
     ps.setInt(3, issueId)
     val rs     = ps.executeQuery()
     val result = if (rs.next()) IssuePeriod(
-      issueId   = issueId,
-      startDate = Option(rs.getString("START_DATE")),
-      endDate   = Option(rs.getString("END_DATE")),
-      progress  = { val v = rs.getInt("PROGRESS"); if (rs.wasNull()) None else Some(v) }
+      issueId        = issueId,
+      startDate      = Option(rs.getString("START_DATE")),
+      endDate        = Option(rs.getString("END_DATE")),
+      progress       = { val v = rs.getInt("PROGRESS"); if (rs.wasNull()) None else Some(v) },
+      estimatedHours = { val v = rs.getDouble("ESTIMATED_HOURS"); if (rs.wasNull()) None else Some(v) },
+      actualHours    = { val v = rs.getDouble("ACTUAL_HOURS"); if (rs.wasNull()) None else Some(v) }
     ) else IssuePeriod(issueId, None, None, None)
     rs.close(); ps.close()
     result
@@ -74,9 +96,9 @@ object IssuePeriodRepository {
 
   def upsertPeriod(conn: Connection, owner: String, repo: String, issueId: Int, period: IssuePeriod): Unit = {
     val ps = conn.prepareStatement(
-      """MERGE INTO REPORTER_ISSUE_PERIOD (OWNER, REPOSITORY_NAME, ISSUE_ID, START_DATE, END_DATE, PROGRESS)
+      """MERGE INTO REPORTER_ISSUE_PERIOD (OWNER, REPOSITORY_NAME, ISSUE_ID, START_DATE, END_DATE, PROGRESS, ESTIMATED_HOURS, ACTUAL_HOURS)
         |KEY (OWNER, REPOSITORY_NAME, ISSUE_ID)
-        |VALUES (?, ?, ?, ?, ?, ?)""".stripMargin
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?)""".stripMargin
     )
     ps.setString(1, owner)
     ps.setString(2, repo)
@@ -92,6 +114,14 @@ object IssuePeriodRepository {
     period.progress match {
       case Some(v) => ps.setInt(6, v)
       case None    => ps.setNull(6, java.sql.Types.INTEGER)
+    }
+    period.estimatedHours match {
+      case Some(v) => ps.setDouble(7, v)
+      case None    => ps.setNull(7, java.sql.Types.DECIMAL)
+    }
+    period.actualHours match {
+      case Some(v) => ps.setDouble(8, v)
+      case None    => ps.setNull(8, java.sql.Types.DECIMAL)
     }
     ps.executeUpdate()
     ps.close()
