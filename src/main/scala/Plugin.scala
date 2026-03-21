@@ -1,7 +1,7 @@
 import gitbucket.core.plugin.PluginRegistry
 import gitbucket.core.service.SystemSettingsService.SystemSettings
 import io.github.gitbucket.solidbase.model.Version
-import io.github.takahino.reporter.controller.{DeadlineNotifyController, IssueNoteController, IssuePeriodController, IssueReportController, IssueTableController, MailScheduleController}
+import io.github.takahino.reporter.controller.{BurndownController, DeadlineNotifyController, IssueNoteController, IssuePeriodController, IssueReportController, IssueTableController, MailScheduleController}
 import io.github.takahino.reporter.scheduler.MailScheduler
 import io.github.takahino.reporter.service.{DeadlineNotifyRepository, IssueNoteRepository, IssuePeriodRepository, IssueTableSettingsRepository, MailScheduleRepository}
 import org.slf4j.LoggerFactory
@@ -26,7 +26,8 @@ class Plugin extends gitbucket.core.plugin.Plugin {
     "/*" -> new MailScheduleController(),
     "/*" -> new DeadlineNotifyController(),
     "/*" -> new IssueNoteController(),
-    "/*" -> new IssuePeriodController()
+    "/*" -> new IssuePeriodController(),
+    "/*" -> new BurndownController()
   )
 
   override def initialize(
@@ -133,13 +134,20 @@ class Plugin extends gitbucket.core.plugin.Plugin {
       return null;
     }
 
+    // btn4: Burndown チャート（新しいタブで開く）
+    var btn4 = makeBtn('/' + owner + '/' + repo + '/issues/burnup',
+      'pulse', 'Burnup');
+    btn4.target = '_blank';
+
     var refEl = findTarget();
     if (refEl) {
       insertBtn(btn0, refEl);
       insertBtn(btn1, refEl);
+      insertBtn(btn4, refEl);
     } else {
       addFixedBtn(btn0, 20);
       addFixedBtn(btn1, 60);
+      addFixedBtn(btn4, 180);
     }
 
     // 書き込み権限チェック — Manager以上のみ btn2・btn3 を表示
