@@ -19,18 +19,6 @@ class DeadlineNotifyController
 
   private val logger = LoggerFactory.getLogger(getClass)
 
-  /** GET /:owner/:repository/issues/deadline-notify/gantt-check */
-  get("/:owner/:repository/issues/deadline-notify/gantt-check")(readableUsersOnly { repo =>
-    contentType = "application/json; charset=UTF-8"
-    implicit val session = request2Session(request)
-    val conn = session.conn
-    val available = Try {
-      conn.createStatement().executeQuery("SELECT 1 FROM ISSUE_PERIOD LIMIT 1")
-      true
-    }.getOrElse(false)
-    s"""{"available":$available}"""
-  })
-
   /** GET /:owner/:repository/issues/deadline-notify */
   get("/:owner/:repository/issues/deadline-notify")(ownerOnly { repo =>
     contentType = "text/html; charset=UTF-8"
