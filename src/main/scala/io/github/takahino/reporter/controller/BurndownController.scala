@@ -182,6 +182,17 @@ class BurndownController
          |  var DATA_API = '$dataApiBase';
          |  var chartInstance = null;
          |
+         |  function addDays(dateStr, n) {
+         |    var dt = new Date(dateStr + 'T00:00:00');
+         |    dt.setDate(dt.getDate() + n);
+         |    return dt.toISOString().slice(0, 10);
+         |  }
+         |  function addMonths(dateStr, n) {
+         |    var dt = new Date(dateStr + 'T00:00:00');
+         |    dt.setMonth(dt.getMonth() + n);
+         |    return dt.toISOString().slice(0, 10);
+         |  }
+         |
          |  function buildUrl() {
          |    var ms   = document.getElementById('bd-milestone').value;
          |    var lbl  = document.getElementById('bd-label').value;
@@ -231,7 +242,7 @@ class BurndownController
          |    canvas.style.display = '';
          |    emptyEl.style.display = 'none';
          |
-         |    var smallDataset = d.labels.length > 60;
+         |    var largeDataset = d.labels.length > 60;
          |    var datasets = [
          |      {
          |        label: '登録数（累計）',
@@ -253,7 +264,7 @@ class BurndownController
          |        fill: false,
          |        stepped: true,
          |        tension: 0,
-         |        pointRadius: smallDataset ? 0 : 2,
+         |        pointRadius: largeDataset ? 0 : 2,
          |        borderWidth: 2,
          |        borderDash: [6, 3]
          |      },
@@ -265,21 +276,10 @@ class BurndownController
          |        fill: 'origin',
          |        stepped: true,
          |        tension: 0,
-         |        pointRadius: smallDataset ? 0 : 3,
+         |        pointRadius: largeDataset ? 0 : 3,
          |        borderWidth: 2
          |      }
          |    ];
-         |
-         |    function addDays(dateStr, n) {
-         |      var dt = new Date(dateStr + 'T00:00:00');
-         |      dt.setDate(dt.getDate() + n);
-         |      return dt.toISOString().slice(0, 10);
-         |    }
-         |    function addMonths(dateStr, n) {
-         |      var dt = new Date(dateStr + 'T00:00:00');
-         |      dt.setMonth(dt.getMonth() + n);
-         |      return dt.toISOString().slice(0, 10);
-         |    }
          |    var vlines = [
          |      { date: d.today,                color: 'rgba(30,30,30,0.85)',   label: '今日' },
          |      { date: addDays(d.today, 7),    color: 'rgba(210,100,0,0.80)', label: '1週間後' },
@@ -436,40 +436,35 @@ class BurndownController
       rs.close(); ps.close()
 
       if (issues.isEmpty) {
-        """{"startDate":null,"endDate":null,"today":null,"hasDueDate":false,"totalIssues":0,"labels":[],"actual":[],"ideal":null}"""
+        """{"startDate":null,"endDate":null,"today":null,"totalIssues":0,"labels":[],"total":[],"completed":[],"plannedCompleted":[]}"""
       } else {
         val today     = LocalDate.now()
         val startDate = issues.map(_._1).minBy(_.toEpochDay)
         // END_DATE がないイシューは today + defaultDays を仮期限とする
         val fallbackEnd  = today.plusDays(defaultDays)
-        val maxEndDate   = (issues.flatMap(_._4) :+ fallbackEnd).maxBy(_.toEpochDay)
-        val hasDueDate   = true
+        val maxEndDate   = issues.flatMap(_._4).maxOption.getOrElse(fallbackEnd)
         val effectiveEnd = if (maxEndDate.isBefore(startDate)) startDate else maxEndDate
         val totalDays    = java.time.temporal.ChronoUnit.DAYS.between(startDate, effectiveEnd).toInt
         val totalIssues  = issues.size
 
         val days = (0L to totalDays).map(startDate.plusDays)
 
-        // スコープ: d 日までに登録された全 issue 数
-        val totalCounts = days.map { d =>
-          issues.count { case (reg, _, _, _) => !reg.isAfter(d) }
-        }
-
-        // 完了数（累計）: d 日までにクローズされた issue 数
-        val completedCounts = days.map { d =>
-          issues.count { case (_, closeDate, closed, _) =>
-            closed && !closeDate.isAfter(d)
+        // 1パスで3系列を同時集計: O(days × issues)
+        val counts = days.map { d =>
+          var total = 0; var completed = 0; var planned = 0
+          issues.foreach { case (reg, closeDate, closed, endDateOpt) =>
+            if (!reg.isAfter(d)) {
+              total += 1
+              if (closed && !closeDate.isAfter(d)) completed += 1
+              val plannedEnd = endDateOpt.getOrElse(if (closed) closeDate else fallbackEnd)
+              if (!plannedEnd.isAfter(d)) planned += 1
+            }
           }
+          (total, completed, planned)
         }
-
-        // 計画完了数（累計）: END_DATE が d 以前の issue 数
-        // END_DATE 未設定の場合: クローズ済み → closeDate、未完了 → fallbackEnd
-        val plannedCompletedCounts = days.map { d =>
-          issues.count { case (reg, closeDate, closed, endDateOpt) =>
-            val plannedEnd = endDateOpt.getOrElse(if (closed) closeDate else fallbackEnd)
-            !reg.isAfter(d) && !plannedEnd.isAfter(d)
-          }
-        }
+        val totalCounts            = counts.map(_._1)
+        val completedCounts        = counts.map(_._2)
+        val plannedCompletedCounts = counts.map(_._3)
 
         val labelsJson           = days.map(d => s""""${d.format(fmt)}"""").mkString("[", ",", "]")
         val totalJson            = totalCounts.mkString("[", ",", "]")
