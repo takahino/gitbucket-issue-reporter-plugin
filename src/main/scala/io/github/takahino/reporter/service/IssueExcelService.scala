@@ -360,13 +360,15 @@ object IssueReportService {
     val today       = java.time.LocalDate.now()
     val fallbackEnd = today.plusDays(defaultDays)
 
-    // (registeredDate, closeDateOpt, closed, endDateOpt)
+    // (registeredDate, closeDateOpt, closed, endDateOpt, progressOpt, startDateOpt)
     val parsed = issues.flatMap { row =>
       parseDay(row.createdAt).map { regDate =>
         val closeDateOpt = if (row.closed) parseDay(row.closedDate) else None
         val endDateOpt   = row.endDate
           .flatMap(s => scala.util.Try(java.time.LocalDate.parse(s.take(10), fmtDay)).toOption)
-        (regDate, closeDateOpt, row.closed, endDateOpt)
+        val startDateOpt = row.startDate
+          .flatMap(s => scala.util.Try(java.time.LocalDate.parse(s.take(10), fmtDay)).toOption)
+        (regDate, closeDateOpt, row.closed, endDateOpt, row.progress, startDateOpt)
       }
     }
 
@@ -379,18 +381,45 @@ object IssueReportService {
     val days         = (0L to totalDays).map(startDate.plusDays)
 
     val totalCounts = days.map { d =>
-      parsed.count { case (reg, _, _, _) => !reg.isAfter(d) }
+      parsed.count { case (reg, _, _, _, _, _) => !reg.isAfter(d) }
     }
     val completedCounts = days.map { d =>
-      parsed.count { case (_, closeDateOpt, closed, _) =>
+      parsed.count { case (_, closeDateOpt, closed, _, _, _) =>
         closed && closeDateOpt.exists(!_.isAfter(d))
       }
     }
     val plannedCompletedCounts = days.map { d =>
-      parsed.count { case (reg, closeDateOpt, closed, endDateOpt) =>
+      parsed.count { case (reg, closeDateOpt, closed, endDateOpt, _, _) =>
         val plannedEnd = endDateOpt.getOrElse(
           if (closed) closeDateOpt.getOrElse(fallbackEnd) else fallbackEnd)
         !reg.isAfter(d) && !plannedEnd.isAfter(d)
+      }
+    }
+    val notStartedCounts = days.map { d =>
+      parsed.count { case (reg, closeDateOpt, closed, _, progressOpt, _) =>
+        if (reg.isAfter(d)) false
+        else {
+          val closedByD = closed && closeDateOpt.exists(!_.isAfter(d))
+          !closedByD && progressOpt.getOrElse(0) <= 0
+        }
+      }
+    }
+    val overdueNotStartedCounts = days.map { d =>
+      parsed.count { case (reg, closeDateOpt, closed, _, progressOpt, startDateOpt) =>
+        if (reg.isAfter(d)) false
+        else {
+          val closedByD = closed && closeDateOpt.exists(!_.isAfter(d))
+          !closedByD && progressOpt.getOrElse(0) <= 0 && startDateOpt.exists(!_.isAfter(d))
+        }
+      }
+    }
+    val inProgressCounts = days.map { d =>
+      parsed.count { case (reg, closeDateOpt, closed, _, progressOpt, _) =>
+        if (reg.isAfter(d)) false
+        else {
+          val closedByD = closed && closeDateOpt.exists(!_.isAfter(d))
+          closedByD || (!closedByD && progressOpt.getOrElse(0) >= 1)
+        }
       }
     }
 
@@ -407,7 +436,7 @@ object IssueReportService {
       s
     }
 
-    val headers = Seq("日付", "登録数（累計）", "計画完了数（累計）", "完了数（累計）")
+    val headers = Seq("日付", "登録数（累計）", "計画完了数（累計）", "未着手（件数）", "開始遅延未着手", "着手（件数）", "完了数（累計）")
     val hRow    = sheet.createRow(0)
     headers.zipWithIndex.foreach { case (h, i) =>
       val cell = hRow.createCell(i)
@@ -420,14 +449,20 @@ object IssueReportService {
       row.createCell(0).setCellValue(d.format(fmtDay))
       row.createCell(1).setCellValue(totalCounts(i).toDouble)
       row.createCell(2).setCellValue(plannedCompletedCounts(i).toDouble)
-      row.createCell(3).setCellValue(completedCounts(i).toDouble)
+      row.createCell(3).setCellValue(notStartedCounts(i).toDouble)
+      row.createCell(4).setCellValue(overdueNotStartedCounts(i).toDouble)
+      row.createCell(5).setCellValue(inProgressCounts(i).toDouble)
+      row.createCell(6).setCellValue(completedCounts(i).toDouble)
     }
 
     sheet.setColumnWidth(0, 12 * 256)
     sheet.setColumnWidth(1, 18 * 256)
     sheet.setColumnWidth(2, 22 * 256)
-    sheet.setColumnWidth(3, 18 * 256)
-    sheet.setAutoFilter(new CellRangeAddress(0, 0, 0, 3))
+    sheet.setColumnWidth(3, 16 * 256)
+    sheet.setColumnWidth(4, 18 * 256)
+    sheet.setColumnWidth(5, 16 * 256)
+    sheet.setColumnWidth(6, 18 * 256)
+    sheet.setAutoFilter(new CellRangeAddress(0, 0, 0, 6))
     sheet.createFreezePane(0, 1)
 
     // グラフはデータが2点以上ある場合のみ作成
@@ -435,8 +470,8 @@ object IssueReportService {
       val numRows = days.size
       val drawing = sheet.createDrawingPatriarch()
       val anchor  = wb.getCreationHelper.createClientAnchor()
-      anchor.setCol1(5); anchor.setRow1(1)
-      anchor.setCol2(15); anchor.setRow2(30)
+      anchor.setCol1(8); anchor.setRow1(1)
+      anchor.setCol2(18); anchor.setRow2(30)
 
       val chart  = drawing.createChart(anchor)
       val legend = chart.getOrAddLegend()
@@ -454,9 +489,12 @@ object IssueReportService {
 
       // (列インデックス, 系列名, RGB色) — Webチャートと同じ色分け
       val seriesDefs = Seq(
-        (1, "登録数（累計）",    (0x96, 0x96, 0x96)),  // グレー
-        (2, "計画完了数（累計）", (0xFF, 0x63, 0x84)),  // 赤
-        (3, "完了数（累計）",    (0x36, 0xA2, 0xEB))   // 青
+        (1, "登録数（累計）",      (0x96, 0x96, 0x96)),  // グレー
+        (2, "計画完了数（累計）",   (0xFF, 0x63, 0x84)),  // 赤
+        (3, "未着手（件数）",      (0xFF, 0x9F, 0x40)),  // オレンジ
+        (4, "開始遅延未着手",      (0xDC, 0x26, 0x26)),  // 深紅
+        (5, "着手（件数）",        (0x99, 0x66, 0xFF)),  // 紫
+        (6, "完了数（累計）",      (0x36, 0xA2, 0xEB))   // 青
       )
 
       seriesDefs.foreach { case (colIdx, title, (r, g, b)) =>

@@ -143,6 +143,12 @@ class BurnupController
          |      class="form-control input-sm" style="width:70px;"
          |      title="完了予定日が未設定のIssueに適用する仮の期限（今日から何日後か）">
          |  </div>
+         |  <div style="align-self:flex-end;padding-bottom:6px;">
+         |    <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:4px;cursor:pointer;margin:0;">
+         |      <input type="checkbox" id="bd-show-vlines" checked style="cursor:pointer;">
+         |      基準線を表示
+         |    </label>
+         |  </div>
          |  <span id="bd-status" style="font-size:12px;color:#888;align-self:flex-end;padding-bottom:4px;"></span>
          |</div>
          |<div style="position:relative;height:420px;">
@@ -154,28 +160,39 @@ class BurnupController
          |<table style="margin-top:16px;font-size:12px;color:#555;border-collapse:collapse;width:100%;">
          |  <thead>
          |    <tr style="background:#f5f5f5;border-bottom:1px solid #ddd;">
+         |      <th style="padding:6px 8px;text-align:center;white-space:nowrap;">表示</th>
          |      <th style="padding:6px 12px;text-align:left;white-space:nowrap;">系列</th>
          |      <th style="padding:6px 12px;text-align:left;">導出条件</th>
          |    </tr>
          |  </thead>
          |  <tbody>
          |    <tr style="border-bottom:1px solid #eee;">
+         |      <td style="padding:6px 8px;text-align:center;"><input type="checkbox" id="bd-series-0" checked style="cursor:pointer;"></td>
          |      <td style="padding:6px 12px;white-space:nowrap;font-weight:bold;color:#888;">登録数（累計）</td>
          |      <td style="padding:6px 12px;">その日までに登録されたIssueの累計数。作業スコープの上限を表す。</td>
          |    </tr>
          |    <tr style="border-bottom:1px solid #eee;">
+         |      <td style="padding:6px 8px;text-align:center;"><input type="checkbox" id="bd-series-1" checked style="cursor:pointer;"></td>
          |      <td style="padding:6px 12px;white-space:nowrap;font-weight:bold;color:rgba(255,99,132,0.9);">計画完了数（累計）</td>
          |      <td style="padding:6px 12px;">その日までに完了予定だったIssueの累計数。完了予定日が未設定のIssueは「今日＋未設定期限（日）」を期限とみなす。</td>
          |    </tr>
          |    <tr style="border-bottom:1px solid #eee;">
+         |      <td style="padding:6px 8px;text-align:center;"><input type="checkbox" id="bd-series-2" checked style="cursor:pointer;"></td>
          |      <td style="padding:6px 12px;white-space:nowrap;font-weight:bold;color:rgba(255,159,64,0.95);">未着手（オープン件数）</td>
          |      <td style="padding:6px 12px;">その日時点でオープンなIssueのうち、進捗が0%（未入力は0%扱い）の件数。</td>
          |    </tr>
          |    <tr style="border-bottom:1px solid #eee;">
+         |      <td style="padding:6px 8px;text-align:center;"><input type="checkbox" id="bd-series-3" checked style="cursor:pointer;"></td>
+         |      <td style="padding:6px 12px;white-space:nowrap;font-weight:bold;color:rgba(220,38,38,0.95);">開始遅延未着手</td>
+         |      <td style="padding:6px 12px;">その日時点でオープンかつ進捗0%で、開始予定日（START_DATE）が設定されており、その日を過ぎているIssueの件数。着手遅延リスクを表す。</td>
+         |    </tr>
+         |    <tr style="border-bottom:1px solid #eee;">
+         |      <td style="padding:6px 8px;text-align:center;"><input type="checkbox" id="bd-series-4" checked style="cursor:pointer;"></td>
          |      <td style="padding:6px 12px;white-space:nowrap;font-weight:bold;color:rgba(153,102,255,0.95);">着手（件数）</td>
          |      <td style="padding:6px 12px;">その日までに登録されたIssueのうち、(1) その日時点でオープンかつ進捗1%以上、(2) その日までにクローズ済み（進捗率は不問）。クローズは実質「やり切った」ため着手扱いとする。</td>
          |    </tr>
          |    <tr>
+         |      <td style="padding:6px 8px;text-align:center;"><input type="checkbox" id="bd-series-5" checked style="cursor:pointer;"></td>
          |      <td style="padding:6px 12px;white-space:nowrap;font-weight:bold;color:rgba(54,162,235,1);">完了数（累計）</td>
          |      <td style="padding:6px 12px;">その日までに実際にクローズされたIssueの累計数。</td>
          |    </tr>
@@ -288,6 +305,18 @@ class BurnupController
          |        borderWidth: 2
          |      },
          |      {
+         |        label: '開始遅延未着手',
+         |        data: d.overdueNotStarted || [],
+         |        borderColor: 'rgba(220,38,38,0.95)',
+         |        backgroundColor: 'transparent',
+         |        fill: false,
+         |        stepped: true,
+         |        tension: 0,
+         |        pointRadius: largeDataset ? 0 : 2,
+         |        borderWidth: 2,
+         |        borderDash: [4, 2]
+         |      },
+         |      {
          |        label: '着手（オープン1%＋クローズ）',
          |        data: d.inProgress || [],
          |        borderColor: 'rgba(153,102,255,0.95)',
@@ -319,6 +348,7 @@ class BurnupController
          |    var verticalLinesPlugin = {
          |      id: 'verticalLines',
          |      afterDraw: function(chart) {
+         |        if (!document.getElementById('bd-show-vlines').checked) return;
          |        var ctx    = chart.ctx;
          |        var xScale = chart.scales.x;
          |        var yScale = chart.scales.y;
@@ -336,7 +366,7 @@ class BurnupController
          |          ctx.fillStyle = vl.color;
          |          ctx.font = 'bold 11px sans-serif';
          |          ctx.textAlign = 'center';
-         |          ctx.fillText(vl.label, x, yScale.top - 5);
+         |          ctx.fillText(vl.label, x, yScale.top + 14);
          |          ctx.restore();
          |        });
          |      }
@@ -350,8 +380,9 @@ class BurnupController
          |        maintainAspectRatio: false,
          |        interaction: { mode: 'index', intersect: false },
          |        plugins: {
-         |          legend: { position: 'top' }
+         |          legend: { display: false }
          |        },
+
          |        scales: {
          |          x: {
          |            ticks: { maxTicksLimit: d.labels.length > 100 ? 15 : undefined, maxRotation: 45 }
@@ -365,12 +396,33 @@ class BurnupController
          |      },
          |      plugins: [verticalLinesPlugin]
          |    });
+         |    for (var i = 0; i < 6; i++) {
+         |      var cb = document.getElementById('bd-series-' + i);
+         |      if (cb && !cb.checked) {
+         |        chartInstance.setDatasetVisibility(i, false);
+         |      }
+         |    }
+         |    chartInstance.update();
          |  }
          |
          |  document.getElementById('bd-milestone').addEventListener('change', loadChart);
          |  document.getElementById('bd-label').addEventListener('change', loadChart);
          |  document.getElementById('bd-assignee').addEventListener('change', loadChart);
          |  document.getElementById('bd-default-days').addEventListener('change', loadChart);
+         |  document.getElementById('bd-show-vlines').addEventListener('change', function() {
+         |    if (chartInstance) chartInstance.update();
+         |  });
+         |  for (var si = 0; si < 6; si++) {
+         |    (function(idx) {
+         |      var cb = document.getElementById('bd-series-' + idx);
+         |      if (cb) cb.addEventListener('change', function() {
+         |        if (chartInstance) {
+         |          chartInstance.setDatasetVisibility(idx, cb.checked);
+         |          chartInstance.update();
+         |        }
+         |      });
+         |    })(si);
+         |  }
          |
          |  // Chart.js を動的ロードしてから初期化
          |  if (typeof Chart !== 'undefined') {
@@ -427,7 +479,7 @@ class BurnupController
         "       AND ic.ISSUE_ID = i.ISSUE_ID AND ic.ACTION IN ('close','close_comment'))," +
         "    i.UPDATED_DATE" +
         "  ) AS CLOSE_DATE," +
-        "  p.END_DATE, p.PROGRESS " +
+        "  p.END_DATE, p.PROGRESS, p.START_DATE " +
         "FROM ISSUE i " +
         "LEFT JOIN REPORTER_ISSUE_PERIOD p ON p.OWNER = i.USER_NAME" +
         "  AND p.REPOSITORY_NAME = i.REPOSITORY_NAME AND p.ISSUE_ID = i.ISSUE_ID " +
@@ -456,8 +508,8 @@ class BurnupController
 
       val rs = ps.executeQuery()
 
-      // (registeredDate, closeDate, closed, endDate, progress)
-      val issues = scala.collection.mutable.ArrayBuffer.empty[(LocalDate, LocalDate, Boolean, Option[LocalDate], Option[Int])]
+      // (registeredDate, closeDate, closed, endDate, progress, startDate)
+      val issues = scala.collection.mutable.ArrayBuffer.empty[(LocalDate, LocalDate, Boolean, Option[LocalDate], Option[Int], Option[LocalDate])]
       while (rs.next()) {
         val endDateOpt = Option(rs.getString(4)).flatMap { s =>
           try Some(LocalDate.parse(s.take(10), fmt)) catch { case _: Exception => None }
@@ -466,12 +518,15 @@ class BurnupController
           val v = rs.getInt(5)
           if (rs.wasNull()) None else Some(v)
         }
-        issues += ((toLocalDate(rs.getString(1)), toLocalDate(rs.getString(3)), rs.getBoolean(2), endDateOpt, progressOpt))
+        val startDateOpt = Option(rs.getString(6)).flatMap { s =>
+          try Some(LocalDate.parse(s.take(10), fmt)) catch { case _: Exception => None }
+        }
+        issues += ((toLocalDate(rs.getString(1)), toLocalDate(rs.getString(3)), rs.getBoolean(2), endDateOpt, progressOpt, startDateOpt))
       }
       rs.close(); ps.close()
 
       if (issues.isEmpty) {
-        """{"startDate":null,"endDate":null,"today":null,"totalIssues":0,"labels":[],"total":[],"completed":[],"plannedCompleted":[],"notStarted":[],"inProgress":[]}"""
+        """{"startDate":null,"endDate":null,"today":null,"totalIssues":0,"labels":[],"total":[],"completed":[],"plannedCompleted":[],"notStarted":[],"inProgress":[],"overdueNotStarted":[]}"""
       } else {
         val today     = LocalDate.now()
         val startDate = issues.map(_._1).minBy(_.toEpochDay)
@@ -486,10 +541,11 @@ class BurnupController
 
         // 1パスで系列を同時集計: O(days × issues)
         // 未着手: その日オープンかつ進捗0%（未設定は0%）。着手: オープンで1%以上、またはその日までにクローズ済み（進捗不問）。
+        // 開始遅延未着手: その日オープンかつ進捗0%かつ開始予定日を過ぎている。
         val counts = days.map { d =>
           var total = 0; var completed = 0; var planned = 0
-          var notStartedOpen = 0; var inProgressCount = 0
-          issues.foreach { case (reg, closeDate, closed, endDateOpt, progressOpt) =>
+          var notStartedOpen = 0; var inProgressCount = 0; var overdueNotStarted = 0
+          issues.foreach { case (reg, closeDate, closed, endDateOpt, progressOpt, startDateOpt) =>
             if (!reg.isAfter(d)) {
               total += 1
               if (closed && !closeDate.isAfter(d)) completed += 1
@@ -500,27 +556,30 @@ class BurnupController
               val p         = progressOpt.getOrElse(0)
               if (openOnDay && p <= 0) notStartedOpen += 1
               if (closedByD || (openOnDay && p >= 1)) inProgressCount += 1
+              if (openOnDay && p <= 0 && startDateOpt.exists(!_.isAfter(d))) overdueNotStarted += 1
             }
           }
-          (total, completed, planned, notStartedOpen, inProgressCount)
+          (total, completed, planned, notStartedOpen, inProgressCount, overdueNotStarted)
         }
         val totalCounts            = counts.map(_._1)
         val completedCounts        = counts.map(_._2)
         val plannedCompletedCounts = counts.map(_._3)
         val notStartedCounts       = counts.map(_._4)
         val inProgressCounts       = counts.map(_._5)
+        val overdueNotStartedCounts = counts.map(_._6)
 
-        val labelsJson           = days.map(d => s""""${d.format(fmt)}"""").mkString("[", ",", "]")
-        val totalJson            = totalCounts.mkString("[", ",", "]")
-        val completedJson        = completedCounts.mkString("[", ",", "]")
-        val plannedCompletedJson = plannedCompletedCounts.mkString("[", ",", "]")
-        val notStartedJson       = notStartedCounts.mkString("[", ",", "]")
-        val inProgressJson       = inProgressCounts.mkString("[", ",", "]")
-        val startStr             = startDate.format(fmt)
-        val endStr               = effectiveEnd.format(fmt)
-        val todayStr             = today.format(fmt)
+        val labelsJson               = days.map(d => s""""${d.format(fmt)}"""").mkString("[", ",", "]")
+        val totalJson                = totalCounts.mkString("[", ",", "]")
+        val completedJson            = completedCounts.mkString("[", ",", "]")
+        val plannedCompletedJson     = plannedCompletedCounts.mkString("[", ",", "]")
+        val notStartedJson           = notStartedCounts.mkString("[", ",", "]")
+        val inProgressJson           = inProgressCounts.mkString("[", ",", "]")
+        val overdueNotStartedJson    = overdueNotStartedCounts.mkString("[", ",", "]")
+        val startStr                 = startDate.format(fmt)
+        val endStr                   = effectiveEnd.format(fmt)
+        val todayStr                 = today.format(fmt)
 
-        s"""{"startDate":"$startStr","endDate":"$endStr","today":"$todayStr","totalIssues":$totalIssues,"labels":$labelsJson,"total":$totalJson,"completed":$completedJson,"plannedCompleted":$plannedCompletedJson,"notStarted":$notStartedJson,"inProgress":$inProgressJson}"""
+        s"""{"startDate":"$startStr","endDate":"$endStr","today":"$todayStr","totalIssues":$totalIssues,"labels":$labelsJson,"total":$totalJson,"completed":$completedJson,"plannedCompleted":$plannedCompletedJson,"notStarted":$notStartedJson,"inProgress":$inProgressJson,"overdueNotStarted":$overdueNotStartedJson}"""
       }
     } catch {
       case e: Exception =>
