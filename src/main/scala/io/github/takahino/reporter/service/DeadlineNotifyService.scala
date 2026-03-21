@@ -162,7 +162,7 @@ object DeadlineNotifyService {
     }
 
     val sql =
-      """SELECT i.ISSUE_ID, i.TITLE, i.USER_NAME AS CREATOR,
+      """SELECT i.ISSUE_ID, i.TITLE, i.OPENED_USER_NAME AS CREATOR,
         |       COALESCE(m.DUE_DATE, NULL) AS MILESTONE_DUE_DATE
         |FROM ISSUE i
         |LEFT JOIN MILESTONE m ON m.MILESTONE_ID = i.MILESTONE_ID

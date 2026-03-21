@@ -126,7 +126,7 @@ object IssueReportService {
         |    THEN FORMATDATETIME(i.UPDATED_DATE, 'yyyy/MM/dd HH:mm')
         |    ELSE ''
         |  END AS CLOSED_DATE,
-        |  i.USER_NAME AS CREATOR,
+        |  i.OPENED_USER_NAME AS CREATOR,
         |  COALESCE(i.CONTENT, '') AS BODY,
         |  (SELECT COUNT(*)
         |   FROM ISSUE_COMMENT ic
