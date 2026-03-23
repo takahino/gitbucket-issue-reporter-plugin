@@ -15,10 +15,11 @@ class IssueTableController
   /** GET /:owner/:repository/issues/issue-table — フィルタ付きIssue一覧ページ */
   get("/:owner/:repository/issues/issue-table")(readableUsersOnly { repository =>
     contentType = "text/html; charset=UTF-8"
-    val ctx = request.getContextPath
+    val ctx   = request.getContextPath
+    val ctxJs = HtmlUtil.escJs(ctx)
 
-    val dataUrl     = s"$ctx/${HtmlUtil.escHtml(repository.owner)}/${HtmlUtil.escHtml(repository.name)}/issues/issue-table/data"
-    val settingsUrl = s"$ctx/${HtmlUtil.escHtml(repository.owner)}/${HtmlUtil.escHtml(repository.name)}/issues/issue-table/settings"
+    val dataUrl     = s"$ctxJs/${HtmlUtil.escHtml(repository.owner)}/${HtmlUtil.escHtml(repository.name)}/issues/issue-table/data"
+    val settingsUrl = s"$ctxJs/${HtmlUtil.escHtml(repository.owner)}/${HtmlUtil.escHtml(repository.name)}/issues/issue-table/settings"
 
     val content =
       s"""<style>

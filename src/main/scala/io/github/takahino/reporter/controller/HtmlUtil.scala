@@ -11,6 +11,10 @@ private[controller] object HtmlUtil {
      .replace("\n", "\\n").replace("\r", "\\r")
      .replace("\t", "\\t")
 
+  /** シングルクォート文字列リテラル ('...') 内への埋め込み用 JS エスケープ */
+  def escJs(s: String): String =
+    s.replace("\\", "\\\\").replace("'", "\\'")
+
   def checked(b: Boolean): String = if (b) "checked" else ""
 
   def alertHtml(message: Option[String]): String = message.map { m =>

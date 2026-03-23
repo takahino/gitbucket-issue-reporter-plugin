@@ -19,6 +19,7 @@ class GanttController
     val owner = repository.owner
     val repo  = repository.name
     val ctx   = request.getContextPath
+    val ctxJs = HtmlUtil.escJs(ctx)
 
     // マイルストーン一覧
     val milestones: Seq[(Int, String)] = {
@@ -83,7 +84,7 @@ class GanttController
       s"""<option value="${HtmlUtil.escHtml(name)}">${HtmlUtil.escHtml(name)}</option>"""
     }.mkString("\n")
 
-    val dataApiBase = s"$ctx/$ownerE/$repoE/issues/gantt/data"
+    val dataApiBase = s"$ctxJs/$ownerE/$repoE/issues/gantt/data"
 
     val content =
       s"""<div id="gt-sticky-top" style="position:sticky;top:0;z-index:50;background:#fff;padding:8px 0 4px;">
@@ -172,7 +173,7 @@ class GanttController
     val extraScript =
       s"""
          |(function() {
-         |  var CHART_JS_URL = '$ctx/ir-assets/chart.min.js';
+         |  var CHART_JS_URL = '$ctxJs/ir-assets/chart.min.js';
          |  var DATA_API = '$dataApiBase';
          |  var chartInstance = null;
          |  var axisChartInstance = null;

@@ -47,6 +47,7 @@ class BurnupController
     val owner = repository.owner
     val repo  = repository.name
     val ctx   = request.getContextPath
+    val ctxJs = HtmlUtil.escJs(ctx)
 
     // マイルストーン一覧
     val milestones: Seq[(Int, String, Option[String])] = {
@@ -113,7 +114,7 @@ class BurnupController
       s"""<option value="${HtmlUtil.escHtml(name)}">${HtmlUtil.escHtml(name)}</option>"""
     }.mkString("\n")
 
-    val dataApiBase = s"$ctx/$ownerE/$repoE/issues/burnup/data"
+    val dataApiBase = s"$ctxJs/$ownerE/$repoE/issues/burnup/data"
 
     val content =
       s"""<div style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
@@ -204,7 +205,7 @@ class BurnupController
     val extraScript =
       s"""
          |(function() {
-         |  var CHART_JS_URL = '$ctx/ir-assets/chart.min.js';
+         |  var CHART_JS_URL = '$ctxJs/ir-assets/chart.min.js';
          |  var DATA_API = '$dataApiBase';
          |  var chartInstance = null;
          |
