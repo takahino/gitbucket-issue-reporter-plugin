@@ -109,17 +109,17 @@ class Plugin extends gitbucket.core.plugin.Plugin {
 
   // Issue一覧ページのボタン注入
   function initIssueList() {
-    var m = location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/issues\/?$/);
+    var m = location.pathname.match(/^(.*\/([^\/]+)\/([^\/]+))\/issues\/?$/);
     if (!m) return;
-    var owner = m[1], repo = m[2];
+    var base = m[1], owner = m[2], repo = m[3];
 
     // btn0: Issue一覧GUIページ（新しいタブで開く）
-    var btn0 = makeBtn('/' + owner + '/' + repo + '/issues/issue-table',
+    var btn0 = makeBtn(base + '/issues/issue-table',
       'list-unordered', 'Issue\u4E00\u89A7');
     btn0.target = '_blank';
 
     // btn1: Issue一覧をExcel形式でダウンロード
-    var btn1 = makeBtn('/' + owner + '/' + repo + '/issues/export-excel',
+    var btn1 = makeBtn(base + '/issues/export-excel',
       'cloud-download', 'Excel\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9');
 
     var targets = [
@@ -137,12 +137,12 @@ class Plugin extends gitbucket.core.plugin.Plugin {
     }
 
     // btn4: Burnup チャート（新しいタブで開く）
-    var btn4 = makeBtn('/' + owner + '/' + repo + '/issues/burnup',
+    var btn4 = makeBtn(base + '/issues/burnup',
       'pulse', 'Burnup');
     btn4.target = '_blank';
 
     // btn5: Gantt チャート（新しいタブで開く）
-    var btn5 = makeBtn('/' + owner + '/' + repo + '/issues/gantt',
+    var btn5 = makeBtn(base + '/issues/gantt',
       'graph', 'Gantt');
     btn5.target = '_blank';
 
@@ -161,7 +161,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
 
     // 書き込み権限チェック — Manager以上のみ btn2・btn3 を表示
     var xhrPerm = new XMLHttpRequest();
-    xhrPerm.open('GET', '/' + owner + '/' + repo + '/issues/reporter-writable-check', true);
+    xhrPerm.open('GET', base + '/issues/reporter-writable-check', true);
     xhrPerm.onload = function() {
       if (xhrPerm.status !== 200) return;
       try {
@@ -170,7 +170,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
       } catch(e) { return; }
 
       // btn2: 定期Excel送信設定
-      var btn2 = makeBtn('/' + owner + '/' + repo + '/issues/mail-schedule',
+      var btn2 = makeBtn(base + '/issues/mail-schedule',
         'mail', '\u5B9A\u671FExcel\u9001\u4FE1');
       var ref2 = findTarget();
       if (ref2) {
@@ -180,7 +180,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
       }
 
       // btn3: 期日通知設定（Gantt Plugin 未インストール時はマイルストーン期日にフォールバック）
-      var btn3 = makeBtn('/' + owner + '/' + repo + '/issues/deadline-notify',
+      var btn3 = makeBtn(base + '/issues/deadline-notify',
         'clock', '\u671F\u65E5\u901A\u77E5\u8A2D\u5B9A');
       var ref3 = findTarget();
       if (ref3) {
@@ -194,9 +194,9 @@ class Plugin extends gitbucket.core.plugin.Plugin {
 
   // Issue個別ページの備考UI注入
   function initIssueDetail() {
-    var m = location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/issues\/(\d+)$/);
+    var m = location.pathname.match(/^(.*\/([^\/]+)\/([^\/]+))\/issues\/(\d+)$/);
     if (!m) return;
-    var owner = m[1], repo = m[2], issueId = m[3];
+    var base = m[1], owner = m[2], repo = m[3], issueId = m[4];
 
     // 備考フォームを作成
     var noteDiv = document.createElement('div');
@@ -230,7 +230,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
 
     // 現在の備考・確認待ち情報をロード
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', '/' + owner + '/' + repo + '/issues/' + issueId + '/note', true);
+    xhr.open('GET', base + '/issues/' + issueId + '/note', true);
     xhr.onload = function() {
       if (xhr.status === 200) {
         try {
@@ -252,7 +252,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
       statusEl.textContent = '\u4fdd\u5b58\u4e2d...';
       statusEl.style.color = '#666';
       var xhr2 = new XMLHttpRequest();
-      xhr2.open('POST', '/' + owner + '/' + repo + '/issues/' + issueId + '/note', true);
+      xhr2.open('POST', base + '/issues/' + issueId + '/note', true);
       xhr2.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       xhr2.onload = function() {
         if (xhr2.status === 200) {
@@ -319,7 +319,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
 
     // 期間データをロード
     var xhrP = new XMLHttpRequest();
-    xhrP.open('GET', '/' + owner + '/' + repo + '/issues/' + issueId + '/reporter-period', true);
+    xhrP.open('GET', base + '/issues/' + issueId + '/reporter-period', true);
     xhrP.onload = function() {
       if (xhrP.status === 200) {
         try {
@@ -345,7 +345,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
       statusEl2.textContent = '\u4fdd\u5b58\u4e2d...';
       statusEl2.style.color = '#666';
       var xhrP2 = new XMLHttpRequest();
-      xhrP2.open('POST', '/' + owner + '/' + repo + '/issues/' + issueId + '/reporter-period', true);
+      xhrP2.open('POST', base + '/issues/' + issueId + '/reporter-period', true);
       xhrP2.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       xhrP2.onload = function() {
         if (xhrP2.status === 200) {

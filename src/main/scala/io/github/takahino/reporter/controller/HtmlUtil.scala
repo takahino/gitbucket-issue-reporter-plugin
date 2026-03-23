@@ -62,12 +62,14 @@ private[controller] object HtmlUtil {
     pageTitle:   String,
     content:     String,
     extraScript: String  = "",
-    wideLayout:  Boolean = false
+    wideLayout:  Boolean = false,
+    contextPath: String  = ""
   ): String = {
     val ownerE   = escHtml(owner)
     val repoE    = escHtml(repo)
     val titleE   = escHtml(title)
     val colClass = if (wideLayout) "col-md-12" else "col-md-8 col-md-offset-2"
+    val ctxE     = escHtml(contextPath)
 
     s"""<!DOCTYPE html>
        |<html lang="ja">
@@ -75,9 +77,9 @@ private[controller] object HtmlUtil {
        |  <meta charset="UTF-8">
        |  <meta name="viewport" content="width=device-width, initial-scale=1">
        |  <title>$titleE</title>
-       |  <link rel="stylesheet" href="/assets/vendors/bootstrap-3.4.1/css/bootstrap.min.css">
-       |  <link rel="stylesheet" href="/assets/vendors/octicons-4.4.0/octicons.css">
-       |  <link rel="stylesheet" href="/assets/common/css/gitbucket.css">
+       |  <link rel="stylesheet" href="$ctxE/assets/vendors/bootstrap-3.4.1/css/bootstrap.min.css">
+       |  <link rel="stylesheet" href="$ctxE/assets/vendors/octicons-4.4.0/octicons.css">
+       |  <link rel="stylesheet" href="$ctxE/assets/common/css/gitbucket.css">
        |</head>
        |<body>
        |
@@ -95,8 +97,8 @@ private[controller] object HtmlUtil {
        |  </div>
        |</div>
        |
-       |<script src="/assets/vendors/jquery/jquery-3.5.1.min.js"></script>
-       |<script src="/assets/vendors/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+       |<script src="$ctxE/assets/vendors/jquery/jquery-3.5.1.min.js"></script>
+       |<script src="$ctxE/assets/vendors/bootstrap-3.4.1/js/bootstrap.min.js"></script>
        |${if (extraScript.nonEmpty) s"<script>\n$extraScript\n</script>" else ""}
        |</body></html>""".stripMargin
   }

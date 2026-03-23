@@ -25,7 +25,7 @@ class DeadlineNotifyController
     implicit val session = request2Session(request)
     val conn    = session.conn
     val setting = DeadlineNotifyRepository.findByRepo(conn, repo.owner, repo.name)
-    renderPage(repo.owner, repo.name, setting, message = None)
+    renderPage(repo.owner, repo.name, setting, message = None, ctx = request.getContextPath)
   })
 
   /** POST /:owner/:repository/issues/deadline-notify — 設定保存 */
@@ -65,7 +65,7 @@ class DeadlineNotifyController
     DeadlineNotifyRepository.upsert(conn, setting)
 
     val saved = DeadlineNotifyRepository.findByRepo(conn, repo.owner, repo.name)
-    renderPage(repo.owner, repo.name, saved, message = Some("設定を保存しました。"))
+    renderPage(repo.owner, repo.name, saved, message = Some("設定を保存しました。"), ctx = request.getContextPath)
   })
 
   /** POST /:owner/:repository/issues/deadline-notify/delete */
@@ -74,7 +74,7 @@ class DeadlineNotifyController
     implicit val session = request2Session(request)
     val conn = session.conn
     DeadlineNotifyRepository.delete(conn, repo.owner, repo.name)
-    renderPage(repo.owner, repo.name, None, message = Some("設定を削除しました。"))
+    renderPage(repo.owner, repo.name, None, message = Some("設定を削除しました。"), ctx = request.getContextPath)
   })
 
   /** POST /:owner/:repository/issues/deadline-notify/send-now */
@@ -84,10 +84,11 @@ class DeadlineNotifyController
     val conn    = session.conn
     val setting = DeadlineNotifyRepository.findByRepo(conn, repo.owner, repo.name)
 
+    val ctx = request.getContextPath
     setting match {
       case None =>
         renderPage(repo.owner, repo.name, None,
-          message = Some("設定が保存されていません。先に設定を保存してください。"))
+          message = Some("設定が保存されていません。先に設定を保存してください。"), ctx = ctx)
       case Some(s) =>
         Try(DeadlineNotifyService.run(conn, s, skipSentCheck = true)) match {
           case scala.util.Success(sentCount) =>
@@ -95,11 +96,11 @@ class DeadlineNotifyController
               "通知条件に合うオープンIssueが0件でした。通知条件を確認してください。"
             else
               s"${sentCount}通の期日通知メールを送信しました。"
-            renderPage(repo.owner, repo.name, Some(s), message = Some(msg))
+            renderPage(repo.owner, repo.name, Some(s), message = Some(msg), ctx = ctx)
           case scala.util.Failure(e) =>
             logger.error("期日通知 即時実行エラー", e)
             renderPage(repo.owner, repo.name, Some(s),
-              message = Some(s"送信エラー: ${e.getMessage}"))
+              message = Some(s"送信エラー: ${e.getMessage}"), ctx = ctx)
         }
     }
   })
@@ -112,7 +113,8 @@ class DeadlineNotifyController
     owner:   String,
     repo:    String,
     setting: Option[DeadlineNotifySetting],
-    message: Option[String]
+    message: Option[String],
+    ctx:     String = ""
   ): String = {
 
     val hour                  = setting.map(_.sendHour).getOrElse(9)
@@ -142,8 +144,9 @@ class DeadlineNotifyController
          |</label>""".stripMargin
     }
 
+    val ctxE = HtmlUtil.escHtml(ctx)
     val deleteBtn = if (setting.isDefined)
-      s"""<form method="post" action="/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/deadline-notify/delete"
+      s"""<form method="post" action="$ctxE/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/deadline-notify/delete"
          |      style="display:inline;">
          |  <button type="submit" class="btn btn-danger btn-sm"
          |    onclick="return confirm('期日通知設定を削除しますか？')">削除</button>
@@ -151,7 +154,7 @@ class DeadlineNotifyController
     else ""
 
     val sendNowBtn = if (setting.isDefined)
-      s"""<form method="post" action="/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/deadline-notify/send-now"
+      s"""<form method="post" action="$ctxE/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/deadline-notify/send-now"
          |      style="display:inline;">
          |  <button type="submit" class="btn btn-default btn-sm">今すぐ送信</button>
          |</form>""".stripMargin
@@ -159,7 +162,7 @@ class DeadlineNotifyController
 
     val content =
       s"""$msgHtml
-         |<form method="post" action="/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/deadline-notify">
+         |<form method="post" action="$ctxE/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/deadline-notify">
          |
          |  <div class="form-group">
          |    <label class="control-label"><strong>通知条件</strong></label>
@@ -252,19 +255,20 @@ class DeadlineNotifyController
          |    <button type="submit" class="btn btn-primary">保存</button>
          |    $deleteBtn
          |    $sendNowBtn
-         |    <a href="/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues"
+         |    <a href="$ctxE/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues"
          |       class="btn btn-default">戻る</a>
          |  </div>
          |
          |</form>""".stripMargin
 
     HtmlUtil.pageShell(
-      title     = "期日通知設定",
-      owner     = owner,
-      repo      = repo,
-      pageIcon  = "clock",
-      pageTitle = "期日通知設定",
-      content   = content
+      title       = "期日通知設定",
+      owner       = owner,
+      repo        = repo,
+      pageIcon    = "clock",
+      pageTitle   = "期日通知設定",
+      content     = content,
+      contextPath = ctx
     )
   }
 

@@ -46,6 +46,7 @@ class BurnupController
     val conn  = session.conn
     val owner = repository.owner
     val repo  = repository.name
+    val ctx   = request.getContextPath
 
     // マイルストーン一覧
     val milestones: Seq[(Int, String, Option[String])] = {
@@ -112,7 +113,7 @@ class BurnupController
       s"""<option value="${HtmlUtil.escHtml(name)}">${HtmlUtil.escHtml(name)}</option>"""
     }.mkString("\n")
 
-    val dataApiBase = s"/$ownerE/$repoE/issues/burnup/data"
+    val dataApiBase = s"$ctx/$ownerE/$repoE/issues/burnup/data"
 
     val content =
       s"""<div style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
@@ -203,7 +204,7 @@ class BurnupController
     val extraScript =
       s"""
          |(function() {
-         |  var CHART_JS_URL = '/ir-assets/chart.min.js';
+         |  var CHART_JS_URL = '$ctx/ir-assets/chart.min.js';
          |  var DATA_API = '$dataApiBase';
          |  var chartInstance = null;
          |
@@ -447,7 +448,8 @@ class BurnupController
       pageTitle   = s"Burnup Chart: $owner/$repo",
       content     = content,
       extraScript = extraScript,
-      wideLayout  = true
+      wideLayout  = true,
+      contextPath = ctx
     )
   })
 

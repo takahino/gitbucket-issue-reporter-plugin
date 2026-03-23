@@ -15,9 +15,10 @@ class IssueTableController
   /** GET /:owner/:repository/issues/issue-table — フィルタ付きIssue一覧ページ */
   get("/:owner/:repository/issues/issue-table")(readableUsersOnly { repository =>
     contentType = "text/html; charset=UTF-8"
+    val ctx = request.getContextPath
 
-    val dataUrl     = s"/${HtmlUtil.escHtml(repository.owner)}/${HtmlUtil.escHtml(repository.name)}/issues/issue-table/data"
-    val settingsUrl = s"/${HtmlUtil.escHtml(repository.owner)}/${HtmlUtil.escHtml(repository.name)}/issues/issue-table/settings"
+    val dataUrl     = s"$ctx/${HtmlUtil.escHtml(repository.owner)}/${HtmlUtil.escHtml(repository.name)}/issues/issue-table/data"
+    val settingsUrl = s"$ctx/${HtmlUtil.escHtml(repository.owner)}/${HtmlUtil.escHtml(repository.name)}/issues/issue-table/settings"
 
     val content =
       s"""<style>
@@ -794,7 +795,8 @@ class IssueTableController
       pageTitle   = s"Issue一覧 — ${HtmlUtil.escHtml(repository.owner)}/${HtmlUtil.escHtml(repository.name)}",
       content     = content,
       extraScript = script,
-      wideLayout  = true
+      wideLayout  = true,
+      contextPath = ctx
     )
   })
 

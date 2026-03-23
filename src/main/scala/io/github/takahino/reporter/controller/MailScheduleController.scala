@@ -33,7 +33,7 @@ class MailScheduleController
     val conn     = session.conn
     val schedule = MailScheduleRepository.findByRepo(conn, repo.owner, repo.name)
     val allUsers = MailScheduleRepository.findAllUsers(conn)
-    renderPage(repo.owner, repo.name, schedule, allUsers, message = None)
+    renderPage(repo.owner, repo.name, schedule, allUsers, message = None, ctx = request.getContextPath)
   })
 
   /** POST /:owner/:repository/issues/mail-schedule — 設定保存 */
@@ -68,7 +68,7 @@ class MailScheduleController
 
     val allUsers = MailScheduleRepository.findAllUsers(conn)
     val saved    = MailScheduleRepository.findByRepo(conn, repo.owner, repo.name)
-    renderPage(repo.owner, repo.name, saved, allUsers, message = Some("設定を保存しました。"))
+    renderPage(repo.owner, repo.name, saved, allUsers, message = Some("設定を保存しました。"), ctx = request.getContextPath)
   })
 
   /** POST /:owner/:repository/issues/mail-schedule/delete */
@@ -78,7 +78,7 @@ class MailScheduleController
     val conn = session.conn
     MailScheduleRepository.delete(conn, repo.owner, repo.name)
     val allUsers = MailScheduleRepository.findAllUsers(conn)
-    renderPage(repo.owner, repo.name, None, allUsers, message = Some("設定を削除しました。"))
+    renderPage(repo.owner, repo.name, None, allUsers, message = Some("設定を削除しました。"), ctx = request.getContextPath)
   })
 
   /** POST /:owner/:repository/issues/mail-schedule/send-now */
@@ -89,19 +89,20 @@ class MailScheduleController
     val schedule = MailScheduleRepository.findByRepo(conn, repo.owner, repo.name)
     val allUsers = MailScheduleRepository.findAllUsers(conn)
 
+    val ctx = request.getContextPath
     schedule match {
       case None =>
         renderPage(repo.owner, repo.name, None, allUsers,
-          message = Some("スケジュールが設定されていません。先に設定を保存してください。"))
+          message = Some("スケジュールが設定されていません。先に設定を保存してください。"), ctx = ctx)
       case Some(s) =>
         Try(MailSendService.send(s, conn)) match {
           case scala.util.Success(_) =>
             renderPage(repo.owner, repo.name, Some(s), allUsers,
-              message = Some("テスト送信が完了しました。"))
+              message = Some("テスト送信が完了しました。"), ctx = ctx)
           case scala.util.Failure(e) =>
             logger.error("即時送信エラー", e)
             renderPage(repo.owner, repo.name, Some(s), allUsers,
-              message = Some(s"送信エラー: ${e.getMessage}"))
+              message = Some(s"送信エラー: ${e.getMessage}"), ctx = ctx)
         }
     }
   })
@@ -115,7 +116,8 @@ class MailScheduleController
     repo:     String,
     schedule: Option[MailSchedule],
     allUsers: Seq[(String, String)],
-    message:  Option[String]
+    message:  Option[String],
+    ctx:      String = ""
   ): String = {
 
     val selectedNames = schedule.map(
@@ -153,8 +155,9 @@ class MailScheduleController
 
     val recipientsValue = HtmlUtil.escHtml(selectedNames.mkString(","))
 
+    val ctxE = HtmlUtil.escHtml(ctx)
     val deleteBtn = if (schedule.isDefined)
-      s"""<form method="post" action="/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/mail-schedule/delete"
+      s"""<form method="post" action="$ctxE/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/mail-schedule/delete"
          |      style="display:inline;">
          |  <button type="submit" class="btn btn-danger btn-sm"
          |    onclick="return confirm('スケジュール設定を削除しますか？')">削除</button>
@@ -162,7 +165,7 @@ class MailScheduleController
     else ""
 
     val sendNowBtn = if (schedule.isDefined)
-      s"""<form method="post" action="/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/mail-schedule/send-now"
+      s"""<form method="post" action="$ctxE/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/mail-schedule/send-now"
          |      style="display:inline;">
          |  <button type="submit" class="btn btn-default btn-sm">今すぐ送信</button>
          |</form>""".stripMargin
@@ -183,7 +186,7 @@ class MailScheduleController
 
     val content =
       s"""$msgHtml
-         |<form method="post" action="/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/mail-schedule">
+         |<form method="post" action="$ctxE/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues/mail-schedule">
          |
          |  <div class="form-group">
          |    <label class="control-label"><strong>送信先ユーザー</strong>（複数選択可）</label>
@@ -233,7 +236,7 @@ class MailScheduleController
          |    <button type="submit" class="btn btn-primary">保存</button>
          |    $deleteBtn
          |    $sendNowBtn
-         |    <a href="/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues"
+         |    <a href="$ctxE/${HtmlUtil.escHtml(owner)}/${HtmlUtil.escHtml(repo)}/issues"
          |       class="btn btn-default">戻る</a>
          |  </div>
          |
@@ -288,13 +291,14 @@ class MailScheduleController
         |})();""".stripMargin
 
     HtmlUtil.pageShell(
-      title      = "Issue Excel 定期送信設定",
-      owner      = owner,
-      repo       = repo,
-      pageIcon   = "mail",
-      pageTitle  = "Issue Excel 定期送信設定",
-      content    = content,
-      extraScript = script
+      title       = "Issue Excel 定期送信設定",
+      owner       = owner,
+      repo        = repo,
+      pageIcon    = "mail",
+      pageTitle   = "Issue Excel 定期送信設定",
+      content     = content,
+      extraScript = script,
+      contextPath = ctx
     )
   }
 
