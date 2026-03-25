@@ -121,17 +121,61 @@ object MailScheduleRepository {
     ps.executeUpdate(); ps.close()
   }
 
-  def findAllUsers(conn: Connection): Seq[(String, String)] = {
-    val ps = conn.prepareStatement(
-      """SELECT USER_NAME, FULL_NAME FROM ACCOUNT
-        |WHERE GROUP_ACCOUNT = FALSE AND REMOVED = FALSE
-        |ORDER BY USER_NAME""".stripMargin
-    )
+  /** リポジトリのIssueを更新できるユーザーのみを返す。
+   *  対象：システム管理者、リポジトリオーナー（個人）、コラボレーター、グループメンバー
+   *  COLLABORATORテーブルが存在しない環境でも動作する。
+   */
+  def findWritableUsers(conn: Connection, owner: String, repository: String): Seq[(String, String)] = {
+    val hasCollaborator = tableExists(conn, "COLLABORATOR")
+    val collaboratorCondition =
+      if (hasCollaborator)
+        """  OR EXISTS (
+          |    SELECT 1 FROM COLLABORATOR c
+          |    WHERE c.USER_NAME = ? AND c.REPOSITORY_NAME = ?
+          |    AND c.COLLABORATOR_NAME = a.USER_NAME
+          |  )""".stripMargin
+      else ""
+
+    val sql =
+      s"""SELECT DISTINCT a.USER_NAME, a.FULL_NAME FROM ACCOUNT a
+         |WHERE a.GROUP_ACCOUNT = FALSE AND a.REMOVED = FALSE
+         |AND (
+         |  a.ADMINISTRATOR = TRUE
+         |  OR a.USER_NAME = ?
+         |$collaboratorCondition
+         |  OR EXISTS (
+         |    SELECT 1 FROM GROUP_MEMBER gm
+         |    WHERE gm.GROUP_NAME = ?
+         |    AND gm.USER_NAME = a.USER_NAME
+         |  )
+         |)
+         |ORDER BY a.USER_NAME""".stripMargin
+
+    val ps = conn.prepareStatement(sql)
+    var idx = 1
+    ps.setString(idx, owner); idx += 1
+    if (hasCollaborator) {
+      ps.setString(idx, owner);      idx += 1
+      ps.setString(idx, repository); idx += 1
+    }
+    ps.setString(idx, owner)
+
     val rs  = ps.executeQuery()
     val buf = mutable.Buffer.empty[(String, String)]
     while (rs.next()) buf += ((rs.getString("USER_NAME"), rs.getString("FULL_NAME")))
     rs.close(); ps.close()
     buf.toSeq
+  }
+
+  private def tableExists(conn: Connection, tableName: String): Boolean = {
+    val ps = conn.prepareStatement(
+      "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = UPPER(?)"
+    )
+    ps.setString(1, tableName)
+    val rs     = ps.executeQuery()
+    val exists = rs.next() && rs.getInt(1) > 0
+    rs.close(); ps.close()
+    exists
   }
 
   def findMailAddresses(conn: Connection, userNames: Seq[String]): Seq[String] = {

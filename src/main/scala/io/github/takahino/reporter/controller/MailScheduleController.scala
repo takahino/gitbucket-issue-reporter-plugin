@@ -32,7 +32,7 @@ class MailScheduleController
     implicit val session = request2Session(request)
     val conn     = session.conn
     val schedule = MailScheduleRepository.findByRepo(conn, repo.owner, repo.name)
-    val allUsers = MailScheduleRepository.findAllUsers(conn)
+    val allUsers = MailScheduleRepository.findWritableUsers(conn, repo.owner, repo.name)
     renderPage(repo.owner, repo.name, schedule, allUsers, message = None, ctx = request.getContextPath)
   })
 
@@ -66,7 +66,7 @@ class MailScheduleController
     )
     MailScheduleRepository.upsert(conn, schedule)
 
-    val allUsers = MailScheduleRepository.findAllUsers(conn)
+    val allUsers = MailScheduleRepository.findWritableUsers(conn, repo.owner, repo.name)
     val saved    = MailScheduleRepository.findByRepo(conn, repo.owner, repo.name)
     renderPage(repo.owner, repo.name, saved, allUsers, message = Some("設定を保存しました。"), ctx = request.getContextPath)
   })
@@ -77,7 +77,7 @@ class MailScheduleController
     implicit val session = request2Session(request)
     val conn = session.conn
     MailScheduleRepository.delete(conn, repo.owner, repo.name)
-    val allUsers = MailScheduleRepository.findAllUsers(conn)
+    val allUsers = MailScheduleRepository.findWritableUsers(conn, repo.owner, repo.name)
     renderPage(repo.owner, repo.name, None, allUsers, message = Some("設定を削除しました。"), ctx = request.getContextPath)
   })
 
@@ -87,7 +87,7 @@ class MailScheduleController
     implicit val session = request2Session(request)
     val conn     = session.conn
     val schedule = MailScheduleRepository.findByRepo(conn, repo.owner, repo.name)
-    val allUsers = MailScheduleRepository.findAllUsers(conn)
+    val allUsers = MailScheduleRepository.findWritableUsers(conn, repo.owner, repo.name)
 
     val ctx = request.getContextPath
     schedule match {
