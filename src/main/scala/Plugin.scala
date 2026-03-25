@@ -192,6 +192,53 @@ class Plugin extends gitbucket.core.plugin.Plugin {
     xhrPerm.send();
   }
 
+  // Issue新規作成ページへの期間フィールド注入
+  function initIssueNew() {
+    var m = location.pathname.match(/^(.*\/([^\/]+)\/([^\/]+))\/issues\/new$/);
+    if (!m) return;
+    var owner = m[2], repo = m[3];
+    var storageKey = 'ir-pending-period-' + owner + '-' + repo;
+
+    var form = document.querySelector('form[action*="/issues/new"]')
+            || document.querySelector('form[method="post"]');
+    if (!form) return;
+
+    var div = document.createElement('div');
+    div.id = 'ir-new-period';
+    div.style.cssText = 'margin:12px 0;padding:10px 12px;border:1px solid #e1e4e8;border-radius:6px;background:#fafafa;';
+    div.innerHTML =
+      '<div style="margin-bottom:8px;font-size:12px;color:#555;font-weight:bold;">\u671f\u9593 / \u5de5\u6570\uff08\u7701\u7565\u53ef\uff09</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">' +
+      '<div><label style="font-size:12px;color:#555;">\u958b\u59cb\u4e88\u5b9a\u65e5</label><br>' +
+      '<input type="date" id="ir-new-start-date" style="border:1px solid #ccc;border-radius:3px;padding:4px;font-size:12px;"></div>' +
+      '<div><label style="font-size:12px;color:#555;">\u5b8c\u4e86\u4e88\u5b9a\u65e5\uff08\u671f\u65e5\uff09</label><br>' +
+      '<input type="date" id="ir-new-end-date" style="border:1px solid #ccc;border-radius:3px;padding:4px;font-size:12px;"></div>' +
+      '<div><label style="font-size:12px;color:#555;">\u898b\u7a4d\u5de5\u6570(h)</label><br>' +
+      '<input type="number" id="ir-new-estimated-hours" min="0" step="0.5" style="width:80px;border:1px solid #ccc;border-radius:3px;padding:4px;font-size:12px;"></div>' +
+      '</div>';
+
+    // submit ボタンの直前に挿入（なければ form 末尾）
+    var submitBtn = form.querySelector('[type="submit"]');
+    if (submitBtn) {
+      var btnParent = submitBtn.closest('.form-actions') || submitBtn.parentNode;
+      btnParent.parentNode.insertBefore(div, btnParent);
+    } else {
+      form.appendChild(div);
+    }
+
+    // フォーム送信時に sessionStorage へ保存
+    form.addEventListener('submit', function() {
+      var sd = document.getElementById('ir-new-start-date').value;
+      var ed = document.getElementById('ir-new-end-date').value;
+      var eh = document.getElementById('ir-new-estimated-hours').value;
+      if (sd || ed || eh) {
+        sessionStorage.setItem(storageKey, JSON.stringify({
+          startDate: sd, endDate: ed, estimatedHours: eh
+        }));
+      }
+    });
+  }
+
   // Issue個別ページの備考UI注入
   function initIssueDetail() {
     var m = location.pathname.match(/^(.*\/([^\/]+)\/([^\/]+))\/issues\/(\d+)$/);
@@ -331,6 +378,27 @@ class Plugin extends gitbucket.core.plugin.Plugin {
           if (pd.actualHours    != null) document.getElementById('ir-actual-hours').value    = pd.actualHours;
         } catch(e) {}
       }
+
+      // 新規作成直後の保留データを確認して自動保存
+      var pendingKey = 'ir-pending-period-' + owner + '-' + repo;
+      var pendingJson = sessionStorage.getItem(pendingKey);
+      if (pendingJson) {
+        sessionStorage.removeItem(pendingKey);
+        try {
+          var pending = JSON.parse(pendingJson);
+          if (pending.startDate)      document.getElementById('ir-start-date').value      = pending.startDate;
+          if (pending.endDate)        document.getElementById('ir-end-date').value         = pending.endDate;
+          if (pending.estimatedHours) document.getElementById('ir-estimated-hours').value  = pending.estimatedHours;
+          var xhrAuto = new XMLHttpRequest();
+          xhrAuto.open('POST', base + '/issues/' + issueId + '/reporter-period', true);
+          xhrAuto.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+          xhrAuto.send(
+            'startDate='       + encodeURIComponent(pending.startDate || '') +
+            '&endDate='        + encodeURIComponent(pending.endDate || '') +
+            '&estimatedHours=' + encodeURIComponent(pending.estimatedHours || '')
+          );
+        } catch(e) {}
+      }
     };
     xhrP.send();
 
@@ -373,6 +441,7 @@ class Plugin extends gitbucket.core.plugin.Plugin {
 
   function init() {
     initIssueList();
+    initIssueNew();
     initIssueDetail();
   }
 
